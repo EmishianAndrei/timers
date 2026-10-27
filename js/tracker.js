@@ -43,11 +43,19 @@ function recipeByNum(code) {
   return all("recipes").find(r => (r.kind === "product") === (p.kind === "product") && r.num === p.num) || null;
 }
 /** продукты для строки трекера типа «Продукт»: по категории из настроек строки (пусто — все) */
+/** тип: «еда» или «напиток». У рецептов по умолчанию — еда */
+const foodType = r => String(r.ftype || "еда").trim().toLowerCase();
+const lc = s => String(s || "").trim().toLowerCase();
+/** фильтр строки трекера: совпадение с категорией (энергетик…) или типом (еда / напиток) */
+const matchFood = (r, f) => !f || lc(r.cat) === f || foodType(r) === f;
 const productsFor = it => {
-  const cat = String(it.options || "").trim().toLowerCase(), prods = all("recipes").filter(r => r.kind === "product").sort((a, b) => (a.num ?? 0) - (b.num ?? 0));
-  const inCat = prods.filter(r => !cat || String(r.cat || "").trim().toLowerCase() === cat);
+  const f = lc(it.options), prods = all("recipes").filter(r => r.kind === "product").sort((a, b) => (a.num ?? 0) - (b.num ?? 0));
+  const inCat = prods.filter(r => matchFood(r, f));
   return inCat.length ? inCat : prods; // если в категории пусто — показываем все продукты
 };
+/** для «Приёма пищи»: рецепты и продукты с типом из настроек строки (по умолчанию «еда») */
+const mealFoods = it => { const f = lc(it.options) || "еда", by = (a, b) => (a.num ?? 0) - (b.num ?? 0); return {recipes: all("recipes").filter(r => r.kind !== "product" && matchFood(r, f)).sort(by), products: all("recipes").filter(r => r.kind === "product" && matchFood(r, f)).sort(by)}; };
+const foodLabel = r => "№" + r.num + " " + (r.short || r.name);
 const recipesSorted = () => all("recipes").sort((a, b) => ((a.kind === "product") - (b.kind === "product")) || (a.num ?? 1e9) - (b.num ?? 1e9));
 
 VIEWS.tracker = () => {
@@ -73,7 +81,9 @@ function control(k, it) {
     }
     case "meal": {
       const {num, time} = mealParts(v);
-      return `<span class="meal"><input type="text" class="mnum num" list="recipeNums" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="num" value="${esc(num)}" placeholder="№" aria-label="Номер блюда: 3 для рецепта, П1 для продукта" data-tip="3 — рецепт №3, П1 — продукт П1"><input type="time" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="time" value="${esc(time)}" aria-label="Время приёма"></span>`;
+      const {recipes, products} = mealFoods(it), cur = recipeByNum(num);
+      const og = (label, list) => list.length ? `<optgroup label="${label}">${list.map(r => opt(foodCode(r), foodLabel(r), cur && cur.id === r.id)).join("")}</optgroup>` : "";
+      return `<span class="meal"><select class="mnum" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="num" aria-label="Блюдо или продукт" style="max-width:13em">${opt("", "—", !num)}${og("Рецепты", recipes)}${og("Продукты", products)}${num && !cur ? opt(num, num + " (нет в списке)", true) : ""}</select><input type="time" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="time" value="${esc(time)}" aria-label="Время приёма"></span>`;
     }
     case "number": return `<input type="number" inputmode="decimal" step="any" ${a} value="${esc(v)}" aria-label="${esc(it.name)}">`;
     case "product": {
@@ -89,7 +99,7 @@ function control(k, it) {
 function itemLabel(k, it) {
   if (it.type !== "meal") return esc(it.name);
   const {num} = mealParts(val(k, it.id)), r = recipeByNum(num);
-  return `${esc(it.name)}${num ? `<div class="small ${r ? "muted" : ""}">${r ? esc(r.name) : `<button type="button" class="linkbtn" data-act="newRecipe" data-num="${esc(num)}">Нет ${parseFoodCode(num)?.kind === "product" ? "продукта" : "блюда"} ${esc(num)}, добавить</button>`}</div>` : ""}`;
+  return `${esc(it.name)}${num ? `<div class="small ${r ? "muted" : ""}">${r ? esc(r.short ? r.name : "") : `<button type="button" class="linkbtn" data-act="newRecipe" data-num="${esc(num)}">Нет ${parseFoodCode(num)?.kind === "product" ? "продукта" : "блюда"} ${esc(num)}, добавить</button>`}</div>` : ""}`;
 }
 function trackerDay() {
   const k = U.trDate, t0 = today(), its = items().filter(i => active(i, k));
@@ -265,6 +275,7 @@ function trackerSetup() {
       <button type="button" class="icon" data-act="moveItem" data-id="${i.id}" data-n="-1" ${idx === 0 ? "disabled" : ""} aria-label="Выше">↑</button>
       <button type="button" class="icon" data-act="moveItem" data-id="${i.id}" data-n="1" ${idx === list.length - 1 ? "disabled" : ""} aria-label="Ниже">↓</button></div>
     <div class="row small">
+      ${i.type === "meal" ? `<label class="row">Показывать<input type="text" data-chg="item" data-id="${i.id}" data-f="options" value="${esc(i.options)}" placeholder="еда (тип или категория)" style="width:16em"></label>` : ""}
       ${i.type === "product" ? `<label class="row">Категория продуктов<input type="text" data-chg="item" data-id="${i.id}" data-f="options" value="${esc(i.options)}" placeholder="например, энергетик (пусто — все)" style="width:16em"></label>` : ""}
       ${i.type === "choice" ? `<label class="row">Варианты через |<input type="text" data-chg="item" data-id="${i.id}" data-f="options" value="${esc(i.options)}" style="width:14em"></label>` : ""}
       ${i.type === "time" ? `<label class="row">Роль<select data-chg="item" data-id="${i.id}" data-f="role">${opt("", "—", !i.role)}${opt("bed", "Отбой (для сна)", i.role === "bed")}${opt("wake", "Подъём (для сна)", i.role === "wake")}</select></label>` : ""}
