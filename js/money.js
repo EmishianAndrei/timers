@@ -139,7 +139,7 @@ VIEWS.goals = () => {
 /* ===== Настройки ===== */
 VIEWS.settings = () => {
   const counts = Object.keys(SCHEMA).map(c => [c, Object.keys(S.cols[c]).length]);
-  return `<div class="bar"><h2>Настройки и база</h2></div>
+  return `<div class="bar"><h2>Настройки и база</h2></div>${scriptBanner()}
   <section class="panel"><h3>Подключение к Google-таблице</h3>
     <p class="muted small">Адрес веб-приложения Apps Script и ключ из переменной SECRET в скрипте. Инструкция по установке есть в README репозитория.</p>
     <form class="form" data-form="cfg" autocomplete="off" style="flex-direction:column;align-items:stretch">

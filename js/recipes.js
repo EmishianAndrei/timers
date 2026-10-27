@@ -35,7 +35,7 @@ VIEWS.recipes = () => {
   const card = r => {
     const ed = U.editRecipe === r.id, u = use[foodCode(r)], prod = isProduct(r);
     const head = `<div class="li" style="align-items:flex-start">
-        <div style="min-width:0;flex:1"><div class="row" style="gap:10px"><span class="rnum num">${prod ? "П" : "№"}${esc(r.num)}</span><h3 style="overflow-wrap:anywhere">${esc(r.name)}</h3></div>
+        <div style="min-width:0;flex:1"><div class="row" style="gap:10px"><span class="rnum num">№${esc(r.num)}</span><h3 style="overflow-wrap:anywhere">${esc(r.name)}</h3></div>
         <div class="small muted">${prod && toNum(r.pack) ? `упаковка ${fnum(toNum(r.pack))} ${esc(r.unit || "г")} · ` : ""}${u ? `${prod ? "отмечено" : "ели"} ${u.n} раз · последний раз ${short(u.last)}` : prod ? "ещё не отмечали" : "ещё не ели"}</div></div>
         <button type="button" class="icon" data-act="editRecipe" data-id="${ed ? "" : r.id}" aria-label="${ed ? "Готово" : "Изменить"}">${ed ? "✓" : "✎"}</button></div>`;
     if (prod) return `<article class="panel recipe">${head}
@@ -64,7 +64,7 @@ VIEWS.recipes = () => {
         ${r.notes ? `<div class="small muted">${esc(r.notes)}</div>` : ""}`}
     </article>`;
   };
-  const numInput = `<label class="row" style="gap:6px">${mode === "products" ? "П" : "№"}<input type="number" name="num" min="1" step="1" value="${esc(pre || nextRecipeNum(mode === "products"))}" style="width:6em" aria-label="Номер"></label>`;
+  const numInput = `<label class="row" style="gap:6px">№<input type="number" name="num" min="1" step="1" value="${esc(pre || nextRecipeNum(mode === "products"))}" style="width:6em" aria-label="Номер"></label>`;
   const form = mode === "products" ? `<section class="panel"><h3>Новый продукт</h3>
     <form class="form" data-form="addProduct" autocomplete="off" style="flex-direction:column;align-items:stretch">
       <div class="row">${numInput}<input type="text" name="name" placeholder="Название продукта" required style="flex:1 1 240px" aria-label="Название"></div>
@@ -89,6 +89,7 @@ VIEWS.recipes = () => {
       <button type="button" data-act="foodMode" data-v="products" aria-pressed="${mode === "products"}">Продукты</button></div>
     <input type="search" data-chg="recipeQ" value="${esc(U.recipeQ || "")}" placeholder="Поиск по названию, составу или №" style="flex:0 1 300px" aria-label="Поиск"></div>
   <p class="muted small" style="margin:-6px 0 0">У рецептов и продуктов своя нумерация. В трекере в «Приёме еды» пишите <b>3</b> для рецепта №3 и <b>П1</b> для продукта П1, название подставится само.</p>
+  ${scriptBanner()}
   ${form}
   ${list.length ? `<div class="rgrid">${list.map(card).join("")}</div>` : `<p class="empty">${q ? "Ничего не найдено." : mode === "products" ? "Продуктов пока нет." : "Рецептов пока нет."}</p>`}`;
 };
@@ -127,11 +128,11 @@ Object.assign(FORM, {
   addProduct: f => {
     const name = fv(f, "name").trim(), num = Math.round(toNum(fv(f, "num")) || nextRecipeNum(true));
     if (!name) return;
-    if (all("recipes").some(r => r.num === num && sameKind(r, true))) return toast("Номер П" + num + " уже занят, выберите другой", 5000);
+    if (all("recipes").some(r => r.num === num && sameKind(r, true))) return toast("Продукт №" + num + " уже есть, выберите другой номер", 5000);
     const n = k => { const v = toNum(fv(f, k)); return v == null ? "" : String(v); };
     put("recipes", {id: uid(), kind: "product", num, name, unit: fv(f, "unit"), pack: n("pack"), kcal: n("kcal"), prot: n("prot"), fat: n("fat"), carb: n("carb"), sugar: n("sugar"), extra: fv(f, "extra"), ingredients: fv(f, "ingredients"), steps: "", notes: fv(f, "notes").trim(), order: num});
     U.newRecipeNum = null;
-    toast("Продукт П" + num + " добавлен");
+    toast("Продукт №" + num + " добавлен");
   },
 });
 let rqT = null;

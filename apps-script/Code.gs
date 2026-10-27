@@ -17,6 +17,7 @@
 const SECRET = 'ВСТАВЬТЕ_СВОЙ_КЛЮЧ';
 const BACKUP_FOLDER = 'Трекер — резервные копии';
 const BACKUP_KEEP = 30;
+const VERSION = 3; // сайт проверяет версию и подсказывает, если скрипт пора обновить
 
 // Листы базы и их столбцы (как SCHEMA в js/core.js). Новые столбцы и листы создаются сами при первой записи.
 const SCHEMA = {
@@ -57,7 +58,7 @@ function doPost(e) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let applied = 0;
     if (Array.isArray(req.ops) && req.ops.length) applied = applyOps(ss, req.ops);
-    const res = { ok: true, applied: applied, time: Date.now() };
+    const res = { ok: true, applied: applied, time: Date.now(), version: VERSION };
     if (req.pull) res.data = readAll(ss);
     return out(res);
   } catch (err) {

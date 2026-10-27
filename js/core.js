@@ -157,6 +157,7 @@ function moveIn(c, list, id, n) {
 }
 
 // ---------- синхронизация ----------
+const NEED_SCRIPT = 3; let scriptVersion = 0;
 let syncing = false, syncT = null, syncState = "off", syncMsg = "";
 function syncLabel() {
   const pending = S.outbox.length;
@@ -191,6 +192,8 @@ async function sync(manual) {
     if (!j.ok) throw new Error(errText(j));
     S.outbox = S.outbox.filter(o => !sent.has(o.seq));
     if (j.data) merge(j.data);
+    scriptVersion = Number(j.version) || 1;
+    if (String(setting("scriptVersion", "")) !== String(scriptVersion)) setSetting("scriptVersion", scriptVersion); // видно в таблице на листе settings
     S.lastSync = Date.now(); saveNow();
     setSync("ok");
     if (manual) toast("Синхронизировано");
@@ -226,6 +229,9 @@ document.addEventListener("pointerdown", () => { ptrDown = true; }, true);
 document.addEventListener("pointerup", () => { ptrDown = false; setTimeout(() => { if (pendRender) { pendRender = false; render(); } }, 0); }, true);
 function requestRender() { if (ptrDown) { pendRender = true; return; } render(); }
 
+/** предупреждение, если в таблице работает старая версия скрипта */
+const scriptBanner = () => scriptVersion && scriptVersion < NEED_SCRIPT ? `<div class="panel warn"><b>Скрипт базы устарел, поэтому рецепты и продукты из таблицы не доходят до сайта.</b>
+  <span>Обновите его один раз: Apps Script → вставьте новый код Code.gs → Ctrl+S → Deploy → Manage deployments → ✎ → Version: <b>New version</b> → Deploy. Потом здесь нажмите «Синхронизировать сейчас» в Настройках.</span></div>` : "";
 const afterRender = [];
 function render() {
   pendRender = false;
