@@ -1,7 +1,7 @@
 "use strict";
 /* Трекер привычек: день, месяц (таблица), графики, настройка строк. */
 
-const ITEM_TYPES = {check: "Галочка", duration: "Время (ч:мм, можно из таймеров)", meal: "Приём пищи (№ блюда + время)", number: "Число", choice: "Выбор из списка", time: "Время суток", text: "Текст", computed: "Длительность сна (авто)"};
+const ITEM_TYPES = {check: "Галочка", duration: "Время (ч:мм, можно из таймеров)", meal: "Приём пищи (№ блюда + время)", product: "Продукт из списка (№ + сокр. название)", number: "Число", choice: "Выбор из списка", time: "Время суток", text: "Текст", computed: "Длительность сна (авто)"};
 const SEC_COLORS = ["#3a74d6", "#c2417a", "#2a9a6a", "#e0782f", "#7a5ad6", "#2398ae", "#b8921c"];
 
 const sections = () => all("sections").sort(byOrder);
@@ -42,6 +42,8 @@ function recipeByNum(code) {
   const p = parseFoodCode(code); if (!p) return null;
   return all("recipes").find(r => (r.kind === "product") === (p.kind === "product") && r.num === p.num) || null;
 }
+/** продукты для строки трекера типа «Продукт»: по категории из настроек строки (пусто — все) */
+const productsFor = it => { const cat = String(it.options || "").trim().toLowerCase(); return all("recipes").filter(r => r.kind === "product" && (!cat || String(r.cat || "").trim().toLowerCase() === cat)).sort((a, b) => (a.num ?? 0) - (b.num ?? 0)); };
 const recipesSorted = () => all("recipes").sort((a, b) => ((a.kind === "product") - (b.kind === "product")) || (a.num ?? 1e9) - (b.num ?? 1e9));
 
 VIEWS.tracker = () => {
@@ -70,6 +72,10 @@ function control(k, it) {
       return `<span class="meal"><input type="text" class="mnum num" list="recipeNums" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="num" value="${esc(num)}" placeholder="№" aria-label="Номер блюда: 3 для рецепта, П1 для продукта" data-tip="3 — рецепт №3, П1 — продукт П1"><input type="time" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="time" value="${esc(time)}" aria-label="Время приёма"></span>`;
     }
     case "number": return `<input type="number" inputmode="decimal" step="any" ${a} value="${esc(v)}" aria-label="${esc(it.name)}">`;
+    case "product": {
+      const list = productsFor(it), cur = recipeByNum(v);
+      return `<select ${a} aria-label="${esc(it.name)}" style="max-width:15em">${opt("", "—", !v)}${list.map(r => opt(foodCode(r), "№" + r.num + " " + (r.short || r.name), cur && cur.id === r.id)).join("")}${v && !cur ? opt(v, (toNum(v) != null ? fnum(toNum(v), 3) : v) + " (старая запись)", true) : ""}</select>`;
+    }
     case "choice": return `<select ${a} aria-label="${esc(it.name)}">${opt("", "—", !v)}${String(it.options || "").split("|").filter(x => x !== "").map(o => opt(o, fnum(toNum(o), 3) || o, String(toNum(v)) === String(toNum(o)) && v !== "")).join("")}</select>`;
     case "time": return `<input type="time" ${a} value="${esc(v)}" aria-label="${esc(it.name)}">`;
     case "computed": { const m = sleepMin(k); return `<span class="num">${m == null ? "—" : min2hm(m)}</span>`; }
@@ -107,6 +113,7 @@ function cellText(k, it) {
     case "duration": { const man = toNum(v); if (man != null) return man ? fmtMin(man) : ""; const a = autoMin(k, it.id); return a ? `<span class="av">${fmtMin(a)}</span>` : ""; }
     case "meal": { const {num, time} = mealParts(v); if (!num && !time) return ""; const r = recipeByNum(num); return `<span data-tip="${esc((r ? r.name : num ? num + " (нет в рецептах и продуктах)" : "без блюда") + (time ? "\n" + time : ""))}">${num ? esc(num) : "•"}</span>`; }
     case "number": { const n = toNum(v); return n == null ? "" : n >= 10000 ? fnum(n / 1000, 1) + "к" : fnum(n, 2); }
+    case "product": { if (!v) return ""; const r = recipeByNum(v); return r ? `<span data-tip="${esc(r.name)}">№${esc(r.num)}</span>` : `<span data-tip="старая запись">${toNum(v) != null ? fnum(toNum(v), 3) : esc(v)}</span>`; }
     case "choice": { const n = toNum(v); return n == null ? esc(v) : fnum(n, 3); }
     case "time": return esc(v);
     case "computed": { const m = sleepMin(k); return m == null ? "" : min2hm(m); }
@@ -118,7 +125,7 @@ function aggText(days, it) {
   switch (it.type) {
     case "check": { const n = ds.filter(d => isOn(d, it.id)).length; return n ? n + "/" + ds.length : ""; }
     case "duration": { const s = ds.reduce((a, d) => a + durVal(d, it), 0); return s ? fmtMin(s) : ""; }
-    case "meal": { const n = ds.filter(d => val(d, it.id)).length; return n ? n + " дн" : ""; }
+    case "meal": case "product": { const n = ds.filter(d => val(d, it.id)).length; return n ? n + " дн" : ""; }
     case "number": { const v = ds.map(d => toNum(val(d, it.id))).filter(x => x != null); return v.length ? "ср " + fnum(v.reduce((a, b) => a + b, 0) / v.length, 0) : ""; }
     case "computed": { const v = ds.map(sleepMin).filter(x => x != null); return v.length ? "ср " + min2hm(v.reduce((a, b) => a + b, 0) / v.length) : ""; }
     default: return "";
@@ -225,7 +232,7 @@ function trackerCharts() {
     const lo = 6 * 60, hi = 24 * 60, avg = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
     return strip(it, (d, i) => vals[i] == null ? `<i class="hc nb"></i>` : `<i class="hc nb" data-tip="${esc(it.name)}\n${human(d)}\n${esc(val(d, it.id))}"><s style="bottom:${Math.min(100, Math.max(0, (vals[i] - lo) / (hi - lo) * 100))}%"></s></i>`, avg == null ? "" : "ср " + min2hm(avg));
   }).join("");
-  const meals = its.filter(i => i.type === "meal");
+  const meals = its.filter(i => i.type === "meal" || i.type === "product");
   const mealRows = meals.map(it => {
     const n = days.filter(d => val(d, it.id)).length;
     return strip(it, d => { const {num, time} = mealParts(val(d, it.id)); if (!num && !time) return `<i class="hc${d > t0 ? " fut" : ""}"></i>`; const r = recipeByNum(num); return `<i class="hc ok" data-tip="${esc(it.name)} · ${human(d)}\n${esc(r ? r.name : num ? num : "без блюда")}${time ? " · " + time : ""}"></i>`; }, n ? n + " дн" : "");
@@ -254,6 +261,7 @@ function trackerSetup() {
       <button type="button" class="icon" data-act="moveItem" data-id="${i.id}" data-n="-1" ${idx === 0 ? "disabled" : ""} aria-label="Выше">↑</button>
       <button type="button" class="icon" data-act="moveItem" data-id="${i.id}" data-n="1" ${idx === list.length - 1 ? "disabled" : ""} aria-label="Ниже">↓</button></div>
     <div class="row small">
+      ${i.type === "product" ? `<label class="row">Категория продуктов<input type="text" data-chg="item" data-id="${i.id}" data-f="options" value="${esc(i.options)}" placeholder="например, энергетик (пусто — все)" style="width:16em"></label>` : ""}
       ${i.type === "choice" ? `<label class="row">Варианты через |<input type="text" data-chg="item" data-id="${i.id}" data-f="options" value="${esc(i.options)}" style="width:14em"></label>` : ""}
       ${i.type === "time" ? `<label class="row">Роль<select data-chg="item" data-id="${i.id}" data-f="role">${opt("", "—", !i.role)}${opt("bed", "Отбой (для сна)", i.role === "bed")}${opt("wake", "Подъём (для сна)", i.role === "wake")}</select></label>` : ""}
       <label class="row">С<input type="date" data-chg="item" data-id="${i.id}" data-f="from" value="${esc(i.from)}"></label>

@@ -28,7 +28,7 @@ VIEWS.recipes = () => {
   const q = (U.recipeQ || "").toLowerCase().trim(), mode = U.foodMode === "products" ? "products" : "recipes";
   const use = recipeUsage();
   let list = recipesSorted().filter(r => mode === "products" ? isProduct(r) : !isProduct(r));
-  if (q) list = list.filter(r => String(r.num) === q || foodCode(r).toLowerCase() === q || [r.name, r.ingredients, r.notes, r.extra].join(" ").toLowerCase().includes(q));
+  if (q) list = list.filter(r => String(r.num) === q || foodCode(r).toLowerCase() === q || [r.name, r.short, r.cat, r.ingredients, r.notes, r.extra].join(" ").toLowerCase().includes(q));
   const pre = U.newRecipeNum;
   const field = (r, f, label, type = "text", attrs = "") => `<label${type !== "text" ? ` style="width:7.5em"` : ""}>${label}<input type="${type === "dec" ? "text" : type}" ${type === "dec" ? `inputmode="decimal"` : ""} data-chg="recipe" data-id="${r.id}" data-f="${f}" value="${esc(r[f])}" ${attrs}></label>`;
   const delRow = r => `<div class="row">${U.delRecipe === r.id ? `<span>Удалить? Записи в трекере останутся с номером.</span><button type="button" class="btn btn-sm btn-danger" data-act="delRecipeYes" data-id="${r.id}">Удалить</button><button type="button" class="btn btn-sm" data-act="delRecipeNo">Отмена</button>` : `<button type="button" class="btn btn-sm btn-danger" data-act="delRecipe" data-id="${r.id}">Удалить</button>`}<button type="button" class="btn btn-sm" data-act="editRecipe" data-id="">Готово</button></div>`;
@@ -36,11 +36,12 @@ VIEWS.recipes = () => {
     const ed = U.editRecipe === r.id, u = use[foodCode(r)], prod = isProduct(r);
     const head = `<div class="li" style="align-items:flex-start">
         <div style="min-width:0;flex:1"><div class="row" style="gap:10px"><span class="rnum num">№${esc(r.num)}</span><h3 style="overflow-wrap:anywhere">${esc(r.name)}</h3></div>
-        <div class="small muted">${prod && toNum(r.pack) ? `упаковка ${fnum(toNum(r.pack))} ${esc(r.unit || "г")} · ` : ""}${u ? `${prod ? "отмечено" : "ели"} ${u.n} раз · последний раз ${short(u.last)}` : prod ? "ещё не отмечали" : "ещё не ели"}</div></div>
+        ${prod && (r.short || r.cat) ? `<div class="small">${r.short ? `<b>${esc(r.short)}</b>` : ""}${r.cat ? ` <span class="chip">${esc(r.cat)}</span>` : ""}</div>` : ""}<div class="small muted">${prod && toNum(r.pack) ? `упаковка ${fnum(toNum(r.pack))} ${esc(r.unit || "г")} · ` : ""}${u ? `${prod ? "отмечено" : "ели"} ${u.n} раз · последний раз ${short(u.last)}` : prod ? "ещё не отмечали" : "ещё не ели"}</div></div>
         <button type="button" class="icon" data-act="editRecipe" data-id="${ed ? "" : r.id}" aria-label="${ed ? "Готово" : "Изменить"}">${ed ? "✓" : "✎"}</button></div>`;
     if (prod) return `<article class="panel recipe">${head}
       ${ed ? `<div class="edit">
         <div class="row">${field(r, "num", "№", "number", `min="1" step="1"`)}<label style="flex:1 1 200px">Название<input type="text" data-chg="recipe" data-id="${r.id}" data-f="name" value="${esc(r.name)}"></label></div>
+        <div class="row"><label style="flex:1 1 160px">Сокращённое название<input type="text" data-chg="recipe" data-id="${r.id}" data-f="short" value="${esc(r.short)}" maxlength="24"></label><label style="flex:1 1 140px">Категория<input type="text" list="pcats" data-chg="recipe" data-id="${r.id}" data-f="cat" value="${esc(r.cat)}" placeholder="энергетик, йогурт…"></label></div>
         <div class="row">${field(r, "pack", "Упаковка", "dec")}<label style="width:6em">Ед.<select data-chg="recipe" data-id="${r.id}" data-f="unit">${opt("г", "г", r.unit !== "мл")}${opt("мл", "мл", r.unit === "мл")}</select></label></div>
         <div class="label">На 100 ${esc(r.unit || "г")}</div>
         <div class="row">${NUTR.map(([k, l]) => field(r, k, l, "dec")).join("")}</div>
@@ -68,6 +69,7 @@ VIEWS.recipes = () => {
   const form = mode === "products" ? `<section class="panel"><h3>Новый продукт</h3>
     <form class="form" data-form="addProduct" autocomplete="off" style="flex-direction:column;align-items:stretch">
       <div class="row">${numInput}<input type="text" name="name" placeholder="Название продукта" required style="flex:1 1 240px" aria-label="Название"></div>
+      <div class="row"><input type="text" name="short" maxlength="24" placeholder="Сокращённое название (для списков в трекере)" style="flex:1 1 220px" aria-label="Сокращённое название"><input type="text" name="cat" list="pcats" placeholder="Категория: энергетик, йогурт…" style="flex:1 1 180px" aria-label="Категория"></div>
       <div class="row"><label class="row" style="gap:6px">Упаковка<input type="text" name="pack" inputmode="decimal" style="width:6em" aria-label="Размер упаковки"></label><select name="unit" aria-label="Единица">${opt("г", "г", true)}${opt("мл", "мл")}</select></div>
       <div class="label">Пищевая ценность на 100 г или мл</div>
       <div class="row">${NUTR.map(([k, l]) => `<input type="text" name="${k}" inputmode="decimal" placeholder="${l}" style="width:8em" aria-label="${l}">`).join("")}</div>
@@ -91,6 +93,7 @@ VIEWS.recipes = () => {
   <p class="muted small" style="margin:-6px 0 0">У рецептов и продуктов своя нумерация. В трекере в «Приёме еды» пишите <b>3</b> для рецепта №3 и <b>П1</b> для продукта П1, название подставится само.</p>
   ${scriptBanner()}
   ${form}
+  <datalist id="pcats">${[...new Set(all("recipes").map(r => r.cat).filter(Boolean))].map(c => opt(c, c)).join("")}</datalist>
   ${list.length ? `<div class="rgrid">${list.map(card).join("")}</div>` : `<p class="empty">${q ? "Ничего не найдено." : mode === "products" ? "Продуктов пока нет." : "Рецептов пока нет."}</p>`}`;
 };
 
@@ -130,7 +133,7 @@ Object.assign(FORM, {
     if (!name) return;
     if (all("recipes").some(r => r.num === num && sameKind(r, true))) return toast("Продукт №" + num + " уже есть, выберите другой номер", 5000);
     const n = k => { const v = toNum(fv(f, k)); return v == null ? "" : String(v); };
-    put("recipes", {id: uid(), kind: "product", num, name, unit: fv(f, "unit"), pack: n("pack"), kcal: n("kcal"), prot: n("prot"), fat: n("fat"), carb: n("carb"), sugar: n("sugar"), extra: fv(f, "extra"), ingredients: fv(f, "ingredients"), steps: "", notes: fv(f, "notes").trim(), order: num});
+    put("recipes", {id: uid(), kind: "product", num, name, short: fv(f, "short").trim(), cat: fv(f, "cat").trim(), unit: fv(f, "unit"), pack: n("pack"), kcal: n("kcal"), prot: n("prot"), fat: n("fat"), carb: n("carb"), sugar: n("sugar"), extra: fv(f, "extra"), ingredients: fv(f, "ingredients"), steps: "", notes: fv(f, "notes").trim(), order: num});
     U.newRecipeNum = null;
     toast("Продукт №" + num + " добавлен");
   },
