@@ -30,8 +30,19 @@ function sleepMin(k) {
 }
 // приём пищи: «№|чч:мм»
 const mealParts = v => { const [num = "", time = ""] = String(v || "").split("|"); return {num: num.trim(), time: time.trim()}; };
-const recipeByNum = num => num === "" ? null : all("recipes").find(r => String(r.num) === String(num)) || null;
-const recipesSorted = () => all("recipes").sort((a, b) => (a.num ?? 1e9) - (b.num ?? 1e9));
+// код блюда: «3» — рецепт №3, «П1» — продукт П1 (нумерация у рецептов и продуктов своя)
+const foodCode = r => (r.kind === "product" ? "П" : "") + r.num;
+function parseFoodCode(code) {
+  const s = String(code || "").trim().replace(/\s+/g, ""); let m;
+  if ((m = /^[пПpP](\d+)$/.exec(s))) return {kind: "product", num: +m[1], code: "П" + m[1]};
+  if ((m = /^\d+$/.exec(s))) return {kind: "", num: +s, code: s};
+  return null;
+}
+function recipeByNum(code) {
+  const p = parseFoodCode(code); if (!p) return null;
+  return all("recipes").find(r => (r.kind === "product") === (p.kind === "product") && r.num === p.num) || null;
+}
+const recipesSorted = () => all("recipes").sort((a, b) => ((a.kind === "product") - (b.kind === "product")) || (a.num ?? 1e9) - (b.num ?? 1e9));
 
 VIEWS.tracker = () => {
   const v = U.trView;
@@ -56,7 +67,7 @@ function control(k, it) {
     }
     case "meal": {
       const {num, time} = mealParts(v);
-      return `<span class="meal"><input type="text" class="mnum num" list="recipeNums" inputmode="numeric" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="num" value="${esc(num)}" placeholder="№" aria-label="Номер блюда"><input type="time" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="time" value="${esc(time)}" aria-label="Время приёма"></span>`;
+      return `<span class="meal"><input type="text" class="mnum num" list="recipeNums" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="num" value="${esc(num)}" placeholder="№" aria-label="Номер блюда: 3 для рецепта, П1 для продукта" data-tip="3 — рецепт №3, П1 — продукт П1"><input type="time" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="time" value="${esc(time)}" aria-label="Время приёма"></span>`;
     }
     case "number": return `<input type="number" inputmode="decimal" step="any" ${a} value="${esc(v)}" aria-label="${esc(it.name)}">`;
     case "choice": return `<select ${a} aria-label="${esc(it.name)}">${opt("", "—", !v)}${String(it.options || "").split("|").filter(x => x !== "").map(o => opt(o, fnum(toNum(o), 3) || o, String(toNum(v)) === String(toNum(o)) && v !== "")).join("")}</select>`;
@@ -68,7 +79,7 @@ function control(k, it) {
 function itemLabel(k, it) {
   if (it.type !== "meal") return esc(it.name);
   const {num} = mealParts(val(k, it.id)), r = recipeByNum(num);
-  return `${esc(it.name)}${num ? `<div class="small ${r ? "muted" : ""}">${r ? esc(r.name) : `<button type="button" class="linkbtn" data-act="newRecipe" data-num="${esc(num)}">Нет блюда №${esc(num)}, добавить</button>`}</div>` : ""}`;
+  return `${esc(it.name)}${num ? `<div class="small ${r ? "muted" : ""}">${r ? esc(r.name) : `<button type="button" class="linkbtn" data-act="newRecipe" data-num="${esc(num)}">Нет ${parseFoodCode(num)?.kind === "product" ? "продукта" : "блюда"} ${esc(num)}, добавить</button>`}</div>` : ""}`;
 }
 function trackerDay() {
   const k = U.trDate, t0 = today(), its = items().filter(i => active(i, k));
@@ -83,7 +94,7 @@ function trackerDay() {
   }).join("");
   const orphan = its.filter(i => !get("sections", i.sectionId));
   return `<div class="bar">${dnav("trDay", k === t0 ? "Сегодня, " + short(k) : human(k))}${k !== t0 ? `<button type="button" class="btn btn-sm" data-act="trToday">Сегодня</button>` : ""}</div>
-    <datalist id="recipeNums">${recipesSorted().map(r => `<option value="${esc(r.num)}">${esc(r.name)}</option>`).join("")}</datalist>
+    <datalist id="recipeNums">${recipesSorted().map(r => `<option value="${esc(foodCode(r))}">${esc(r.name)}</option>`).join("")}</datalist>
     <div class="grid2">${secs}${orphan.length ? secHtml("Без раздела", orphan, null) : ""}</div>
     <section class="panel"><div class="sum"><span>Всего времени за день</span><span class="num">${fmtMin(durTotal)}</span></div></section>`;
 }
@@ -94,7 +105,7 @@ function cellText(k, it) {
   switch (it.type) {
     case "check": return v === "TRUE" ? `<span class="on">✓</span>` : "";
     case "duration": { const man = toNum(v); if (man != null) return man ? fmtMin(man) : ""; const a = autoMin(k, it.id); return a ? `<span class="av">${fmtMin(a)}</span>` : ""; }
-    case "meal": { const {num, time} = mealParts(v); if (!num && !time) return ""; const r = recipeByNum(num); return `<span data-tip="${esc((r ? r.name : num ? "№" + num + " (нет в рецептах)" : "без блюда") + (time ? "\n" + time : ""))}">${num ? "№" + esc(num) : "•"}</span>`; }
+    case "meal": { const {num, time} = mealParts(v); if (!num && !time) return ""; const r = recipeByNum(num); return `<span data-tip="${esc((r ? r.name : num ? num + " (нет в рецептах и продуктах)" : "без блюда") + (time ? "\n" + time : ""))}">${num ? esc(num) : "•"}</span>`; }
     case "number": { const n = toNum(v); return n == null ? "" : n >= 10000 ? fnum(n / 1000, 1) + "к" : fnum(n, 2); }
     case "choice": { const n = toNum(v); return n == null ? esc(v) : fnum(n, 3); }
     case "time": return esc(v);
@@ -217,7 +228,7 @@ function trackerCharts() {
   const meals = its.filter(i => i.type === "meal");
   const mealRows = meals.map(it => {
     const n = days.filter(d => val(d, it.id)).length;
-    return strip(it, d => { const {num, time} = mealParts(val(d, it.id)); if (!num && !time) return `<i class="hc${d > t0 ? " fut" : ""}"></i>`; const r = recipeByNum(num); return `<i class="hc ok" data-tip="${esc(it.name)} · ${human(d)}\n${esc(r ? r.name : num ? "№" + num : "без блюда")}${time ? " · " + time : ""}"></i>`; }, n ? n + " дн" : "");
+    return strip(it, d => { const {num, time} = mealParts(val(d, it.id)); if (!num && !time) return `<i class="hc${d > t0 ? " fut" : ""}"></i>`; const r = recipeByNum(num); return `<i class="hc ok" data-tip="${esc(it.name)} · ${human(d)}\n${esc(r ? r.name : num ? num : "без блюда")}${time ? " · " + time : ""}"></i>`; }, n ? n + " дн" : "");
   }).join("");
 
   return `<div class="bar">${dnav("trMonth", monthName(mk))}<span class="muted small">Наведите на столбик или клетку, чтобы увидеть значение.</span></div>
@@ -303,7 +314,7 @@ Object.assign(CHG, {
   },
   meal: el => {
     const box = el.closest(".meal");
-    const num = box.querySelector("[data-part=num]").value.trim(), time = box.querySelector("[data-part=time]").value.trim();
+    const raw = box.querySelector("[data-part=num]").value.trim(), num = parseFoodCode(raw)?.code || raw, time = box.querySelector("[data-part=time]").value.trim();
     setVal(el.dataset.d, el.dataset.id, num || time ? num + "|" + time : "");
   },
   item: el => patch("items", el.dataset.id, {[el.dataset.f]: el.value.trim()}),
