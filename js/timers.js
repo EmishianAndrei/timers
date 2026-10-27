@@ -3,9 +3,9 @@
 
 const timersList = () => all("timers").filter(t => !t.archived).sort(byOrder);
 const timerMode = () => setting("timerMode", "single");          // по одному / параллельно
-const timerKind = () => setting("timerKind", "stopwatch");       // секундомер / таймер
-const cdSetting = () => Number(setting("cdMin", "90")) || 90;
-const CD_CHOICES = [45, 60, 90];
+/** быстрые таймеры (минуты), общие для всех карточек; меняются в настройках карточки (⋯) */
+const cdPresets = () => String(setting("cdPresets", "5,15,45,60,90")).split(/[\s,;]+/).map(Number).filter(n => n > 0 && n <= 1440).slice(0, 8);
+const presetLabel = m => m < 60 ? m + "м" : Math.floor(m / 60) + "ч" + (m % 60 ? pad(m % 60) : "");
 
 function addSessions(t, s, e) {
   let cur = s;
@@ -22,22 +22,22 @@ function stopTimer(t, now) {
   if (t.cdMin) p.cdAcc = (t.cdAcc || 0) + (now - t.runningSince);
   patch("timers", t.id, p);
 }
-function startTimer(t, now) {
+/** how: "sw" — секундомер, число — новый отсчёт на столько минут, "resume" — продолжить текущий отсчёт */
+function startTimer(t, now, how) {
   const p = {runningSince: now};
-  if (timerKind() === "countdown") {
-    if (!t.cdMin || t.cdRang) Object.assign(p, {cdMin: cdSetting(), cdAcc: 0, cdRang: false});
-  } else Object.assign(p, {cdMin: null, cdAcc: null, cdRang: false});
+  if (typeof how === "number") Object.assign(p, {cdMin: how, cdAcc: 0, cdRang: false});
+  else if (how !== "resume") Object.assign(p, {cdMin: null, cdAcc: null, cdRang: false});
   patch("timers", t.id, p);
 }
-function toggleTimer(id) {
+function toggleTimer(id, how = "sw") {
   const now = Date.now();
-  if (timerKind() === "countdown") { ensureAudio(); askNotify(); }
+  if (how !== "sw") { ensureAudio(); askNotify(); }
   batch(() => {
     const t = get("timers", id);
     if (t.runningSince) stopTimer(t, now);
     else {
       if (timerMode() === "single") for (const o of all("timers")) if (o.id !== id && o.runningSince) stopTimer(o, now);
-      startTimer(get("timers", id), now);
+      startTimer(get("timers", id), now, how);
     }
   });
 }
@@ -107,15 +107,18 @@ VIEWS.timers = () => {
     const rem = cdRemaining(t, now);
     return `<article class="card${run ? " run" : ""}" style="--c:${t.color}">
       <div class="head"><span class="dot"></span><span class="name" title="${esc(t.name)}">${esc(t.name)}</span>
-      ${t.cdMin ? `<button type="button" class="icon" data-act="cdReset" data-id="${t.id}" data-tip="Начать отсчёт заново" aria-label="Сбросить отсчёт">↺</button>` : ""}
       <button type="button" class="icon" data-act="editTimer" data-id="${t.id}" aria-label="Настроить">⋯</button></div>
       <div class="time${rem != null && rem < 0 ? " over" : ""}" data-live="${t.id}">${timeText(t, sp, now)}</div>
       <div class="foot"><span class="small muted" data-livesub="${t.id}">${subText(t, sp, now)}${link ? " · → " + esc(link.name) : ""}</span>
-      <button type="button" class="go" data-act="toggleTimer" data-id="${t.id}">${run ? "Пауза" : "Старт"}</button></div>
+      ${run ? `<button type="button" class="go" data-act="toggleTimer" data-id="${t.id}">Пауза</button>`
+        : t.cdMin ? `<span class="row" style="gap:6px;flex-wrap:nowrap"><button type="button" class="go" data-act="cdResume" data-id="${t.id}">Продолжить</button><button type="button" class="go ghost" data-act="cdReset" data-id="${t.id}" data-tip="Убрать отсчёт. Отработанное время уже записано">Сбросить</button></span>`
+        : `<button type="button" class="go" data-act="toggleTimer" data-id="${t.id}" data-tip="Секундомер">Старт</button>`}</div>
+      ${!run && !t.cdMin ? `<div class="presets" aria-label="Быстрый таймер">${cdPresets().map(m => `<button type="button" class="preset" data-act="cdStart" data-id="${t.id}" data-m="${m}" data-tip="Таймер на ${fmtMin(m)}">${presetLabel(m)}</button>`).join("")}</div>` : ""}
       ${editing ? `<div class="edit">
         <label>Название<input type="text" data-chg="timer" data-id="${t.id}" data-f="name" value="${esc(t.name)}" maxlength="60"></label>
         <label>Группа (необязательно)<input type="text" list="tgroups" data-chg="timer" data-id="${t.id}" data-f="group" value="${esc(t.group)}" placeholder="например, Личное"></label>
         <label>Записывать время в строку трекера<select data-chg="timer" data-id="${t.id}" data-f="itemId">${opt("", "— не записывать —", !t.itemId)}${durItems.map(i => opt(i.id, (get("sections", i.sectionId)?.name || "") + " · " + i.name, t.itemId === i.id)).join("")}</select></label>
+        <label>Быстрые таймеры, минуты (для всех карточек)<input type="text" data-chg="cdPresets" value="${esc(cdPresets().join(", "))}" placeholder="5, 15, 45, 60, 90"></label>
         <div class="row"><span class="muted">Цвет</span>${PALETTE.map(c => `<button type="button" class="swatch" style="--c:${c};${c === t.color ? "outline:2px solid var(--fg);outline-offset:2px" : ""}" data-act="timerColor" data-id="${t.id}" data-c="${c}" aria-label="Цвет"></button>`).join("")}</div>
         <div class="row"><button type="button" class="btn btn-sm" data-act="moveTimer" data-id="${t.id}" data-n="-1">← Раньше</button><button type="button" class="btn btn-sm" data-act="moveTimer" data-id="${t.id}" data-n="1">Позже →</button>
         ${U.delTimer === t.id ? `<span>Удалить? Время в итогах останется.</span><button type="button" class="btn btn-sm btn-danger" data-act="delTimerYes" data-id="${t.id}">Удалить</button><button type="button" class="btn btn-sm" data-act="delTimerNo">Отмена</button>`
@@ -129,19 +132,15 @@ VIEWS.timers = () => {
         return `<div class="grouphead"><h3>${esc(g || "Без группы")}</h3><span class="muted small num" data-livegroup="${esc(g)}">${fmt(tot)}</span></div><div class="tgrid">${ts.map(card).join("")}</div>`;
       }).join("")
     : `<div class="tgrid">${list.map(card).join("")}</div>`;
-  const mode = timerMode(), kind = timerKind(), cd = cdSetting();
+  const mode = timerMode();
   return `
   <div class="bar"><h2>Таймеры</h2>
     <div class="row">
-      <div class="seg" role="group" aria-label="Вид таймера">
-        <button type="button" data-act="kind" data-v="stopwatch" aria-pressed="${kind !== "countdown"}">Секундомер</button>
-        <button type="button" data-act="kind" data-v="countdown" aria-pressed="${kind === "countdown"}">Таймер</button></div>
-      ${kind === "countdown" ? `<div class="seg" role="group" aria-label="Длительность">${CD_CHOICES.map(m => `<button type="button" data-act="cdMin" data-v="${m}" aria-pressed="${cd === m}">${m} мин</button>`).join("")}</div>` : ""}
       <div class="seg" role="group" aria-label="Несколько таймеров">
         <button type="button" data-act="mode" data-v="single" aria-pressed="${mode !== "multi"}" data-tip="Запуск одного таймера ставит остальные на паузу">По одному</button>
         <button type="button" data-act="mode" data-v="multi" aria-pressed="${mode === "multi"}" data-tip="Таймеры идут независимо">Параллельно</button></div>
       ${anyRunning() ? `<button type="button" class="btn" data-act="pauseAll">Пауза для всех</button>` : ""}</div></div>
-  ${kind === "countdown" ? `<p class="muted small" style="margin:-8px 0 0">Старт запускает отсчёт ${cd} минут. Когда время выйдет, прозвучит сигнал, а таймер продолжит считать переработку. Время в итогах записывается как обычно.</p>` : ""}
+  <p class="muted small" style="margin:-8px 0 0">«Старт» — секундомер. Кнопки 5м, 15м… — таймер: когда время выйдет, прозвучит сигнал, а дальше считается переработка. Время в итогах записывается в обоих случаях.</p>
   <form class="form" data-form="addTimer" autocomplete="off">
     <input type="text" name="name" placeholder="Новое дело, например «Курсовая»" maxlength="60" style="flex:1 1 220px" aria-label="Название">
     <input type="text" name="group" list="tgroups" placeholder="Группа (необязательно)" style="flex:0 1 200px" aria-label="Группа">
@@ -205,13 +204,9 @@ function timerStats() {
 // ---------- действия ----------
 Object.assign(ACT, {
   mode: el => { setSetting("timerMode", el.dataset.v); if (el.dataset.v === "single") { const run = all("timers").filter(t => t.runningSince).sort((a, b) => b.runningSince - a.runningSince); if (run.length > 1) { const now = Date.now(); batch(() => run.slice(1).forEach(t => stopTimer(t, now))); } } },
-  kind: el => { setSetting("timerKind", el.dataset.v); if (el.dataset.v === "countdown") { ensureAudio(); askNotify(); } },
-  cdMin: el => setSetting("cdMin", el.dataset.v),
-  cdReset: el => {
-    const t = get("timers", el.dataset.id), now = Date.now();
-    if (timerKind() !== "countdown") return patch("timers", t.id, {cdMin: null, cdAcc: null, cdRang: false});
-    patch("timers", t.id, {cdMin: cdSetting(), cdAcc: t.runningSince ? -(now - t.runningSince) : 0, cdRang: false});
-  },
+  cdStart: el => toggleTimer(el.dataset.id, Number(el.dataset.m)),
+  cdResume: el => toggleTimer(el.dataset.id, "resume"),
+  cdReset: el => patch("timers", el.dataset.id, {cdMin: null, cdAcc: null, cdRang: false}),
   pauseAll: () => { const now = Date.now(); batch(() => all("timers").forEach(t => stopTimer(t, now))); },
   toggleTimer: el => toggleTimer(el.dataset.id),
   editTimer: el => { U.editTimer = el.dataset.id; U.delTimer = null; render(); },
@@ -226,6 +221,7 @@ Object.assign(ACT, {
 });
 Object.assign(CHG, {
   timer: el => patch("timers", el.dataset.id, {[el.dataset.f]: el.value.trim()}),
+  cdPresets: el => { const v = el.value.split(/[\s,;]+/).map(Number).filter(n => n > 0 && n <= 1440); if (!v.length) { toast("Впишите минуты через запятую, например 5, 15, 45"); return render(); } setSetting("cdPresets", v.slice(0, 8).join(",")); },
 });
 Object.assign(FORM, {
   addTimer: f => {
