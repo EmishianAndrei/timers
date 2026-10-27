@@ -43,7 +43,11 @@ function recipeByNum(code) {
   return all("recipes").find(r => (r.kind === "product") === (p.kind === "product") && r.num === p.num) || null;
 }
 /** продукты для строки трекера типа «Продукт»: по категории из настроек строки (пусто — все) */
-const productsFor = it => { const cat = String(it.options || "").trim().toLowerCase(); return all("recipes").filter(r => r.kind === "product" && (!cat || String(r.cat || "").trim().toLowerCase() === cat)).sort((a, b) => (a.num ?? 0) - (b.num ?? 0)); };
+const productsFor = it => {
+  const cat = String(it.options || "").trim().toLowerCase(), prods = all("recipes").filter(r => r.kind === "product").sort((a, b) => (a.num ?? 0) - (b.num ?? 0));
+  const inCat = prods.filter(r => !cat || String(r.cat || "").trim().toLowerCase() === cat);
+  return inCat.length ? inCat : prods; // если в категории пусто — показываем все продукты
+};
 const recipesSorted = () => all("recipes").sort((a, b) => ((a.kind === "product") - (b.kind === "product")) || (a.num ?? 1e9) - (b.num ?? 1e9));
 
 VIEWS.tracker = () => {
