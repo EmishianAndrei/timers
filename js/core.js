@@ -10,7 +10,7 @@ const SCHEMA = {
   sections:   ["id","name","order","total","updated"],
   items:      ["id","sectionId","name","type","options","role","order","from","to","updated"],
   entries:    ["id","date","itemId","value","updated"],
-  recipes:    ["id","num","name","ingredients","steps","notes","order","updated"],
+  recipes:    ["id","kind","num","name","unit","pack","kcal","prot","fat","carb","sugar","extra","ingredients","steps","notes","order","updated"],
   weekly:     ["id","name","order","archived","updated"],
   weeklyDone: ["id","week","itemId","done","updated"],
   goals:      ["id","month","section","name","target","progress","source","done","order","updated"],
