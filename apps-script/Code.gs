@@ -18,14 +18,15 @@ const SECRET = 'ВСТАВЬТЕ_СВОЙ_КЛЮЧ';
 const BACKUP_FOLDER = 'Трекер — резервные копии';
 const BACKUP_KEEP = 30;
 
-// Листы базы и их столбцы. Должно совпадать со SCHEMA в index.html.
+// Листы базы и их столбцы (как SCHEMA в js/core.js). Новые столбцы и листы создаются сами при первой записи.
 const SCHEMA = {
   settings:   ['id', 'value', 'updated'],
-  timers:     ['id', 'name', 'group', 'color', 'order', 'itemId', 'archived', 'runningSince', 'created', 'updated'],
+  timers:     ['id', 'name', 'group', 'color', 'order', 'itemId', 'archived', 'runningSince', 'created', 'cdMin', 'cdAcc', 'cdRang', 'updated'],
   sessions:   ['id', 'timerId', 'date', 'start', 'end', 'minutes', 'updated'],
   sections:   ['id', 'name', 'order', 'total', 'updated'],
   items:      ['id', 'sectionId', 'name', 'type', 'options', 'role', 'order', 'from', 'to', 'updated'],
   entries:    ['id', 'date', 'itemId', 'value', 'updated'],
+  recipes:    ['id', 'num', 'name', 'ingredients', 'steps', 'notes', 'order', 'updated'],
   weekly:     ['id', 'name', 'order', 'archived', 'updated'],
   weeklyDone: ['id', 'week', 'itemId', 'done', 'updated'],
   goals:      ['id', 'month', 'section', 'name', 'target', 'progress', 'source', 'done', 'order', 'updated'],
@@ -37,7 +38,7 @@ const SCHEMA = {
   debts:      ['id', 'name', 'base', 'order', 'archived', 'updated'],
   debtOps:    ['id', 'debtId', 'date', 'amount', 'note', 'updated'],
   lists:      ['id', 'name', 'group', 'order', 'updated'],
-  tasks:      ['id', 'listId', 'title', 'notes', 'due', 'done', 'doneAt', 'starred', 'order', 'updated'],
+  tasks:      ['id', 'listId', 'parent', 'title', 'notes', 'due', 'done', 'doneAt', 'starred', 'order', 'updated'],
 };
 
 function doGet() {
@@ -170,8 +171,8 @@ function readAll(ss) {
   const data = {};
   ss.getSheets().forEach(function (sh) {
     const name = sh.getName();
-    if (!SCHEMA[name]) return;
     const headers = headersOf(sh);
+    if (!SCHEMA[name] && headers[0] !== 'id') return; // любой лист с первым столбцом id — это коллекция
     const lastRow = sh.getLastRow();
     const list = [];
     if (lastRow > 1 && headers.length) {
