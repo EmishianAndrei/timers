@@ -1,6 +1,6 @@
 // Кэш для работы без интернета. Файлы сайта берутся из сети (чтобы сразу получать обновления),
 // а без сети — из кэша. Шрифты и иконки — сначала из кэша.
-const CACHE = "tracker-v4";
+const CACHE = "tracker-v5";
 const FILES = ["./", "index.html", "js/core.js", "js/timers.js", "js/tracker.js", "js/recipes.js", "js/tasks.js", "js/money.js", "js/main.js", "manifest.webmanifest", "favicon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
@@ -19,7 +19,8 @@ self.addEventListener("fetch", e => {
   const url = new URL(req.url);
   if (url.origin === location.origin) {
     if (/\.png$/.test(url.pathname)) { e.respondWith(caches.match(req).then(hit => hit || fetch(req))); return; }
-    e.respondWith(fetch(req).then(res => {
+    // no-cache: всегда спрашиваем GitHub, не изменился ли файл (иначе браузер до 10 минут отдаёт старую версию)
+    e.respondWith(fetch(req, {cache: "no-cache"}).then(res => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req.mode === "navigate" ? "index.html" : req, copy)); }
       return res;
     }).catch(() => caches.match(req.mode === "navigate" ? "index.html" : req, {ignoreSearch: true})));
