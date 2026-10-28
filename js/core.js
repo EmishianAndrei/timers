@@ -111,7 +111,8 @@ function load() {
   try { const v = JSON.parse(localStorage.getItem(LSKEY) || "null"); if (v && v.cols) S = Object.assign(S, v); } catch (e) {}
   try { Object.assign(U, JSON.parse(localStorage.getItem(UIKEY) || "{}")); } catch (e) {}
   for (const c in SCHEMA) S.cols[c] = S.cols[c] || {};
-  U.trDate = U.trDate || today(); U.tmDate = today();
+  // при каждом открытии — сегодняшний день и текущий месяц
+  U.trDate = today(); U.tmDate = today(); U.trMonth = U.finMonth = U.goalMonth = mkey(today());
   U.menu = null; U.modal = null; U.adding = null; U.openTask = null;
 }
 let saveT = null;
@@ -186,7 +187,11 @@ async function sync(manual) {
   const ops = S.outbox.slice(0, 300);
   const sent = new Set(ops.map(o => o.seq));
   try {
-    const res = await fetch(S.cfg.url, {method: "POST", body: JSON.stringify({key: S.cfg.key, ops: ops.map(({seq, ...o}) => o), pull: true})});
+    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 45000);
+    let res;
+    try { res = await fetch(S.cfg.url, {method: "POST", body: JSON.stringify({key: S.cfg.key, ops: ops.map(({seq, ...o}) => o), pull: true}), signal: ctl.signal}); }
+    catch (x) { throw x.name === "AbortError" ? new Error("База не ответила за 45 секунд, повторю позже.") : x; }
+    finally { clearTimeout(to); }
     const txt = await res.text();
     let j; try { j = JSON.parse(txt); } catch (e) { throw new Error("Скрипт вернул не JSON. Проверьте, что развёрнуто веб-приложение с доступом «Все»."); }
     if (!j.ok) throw new Error(errText(j));
@@ -201,6 +206,7 @@ async function sync(manual) {
   } catch (e) {
     const msg = e instanceof TypeError ? "Нет связи с базой. Проверьте интернет и адрес скрипта." : (e.message || String(e));
     setSync("err", msg);
+    scheduleSync(30000);
     if (manual) toast(msg, 6000);
   } finally { syncing = false; }
 }

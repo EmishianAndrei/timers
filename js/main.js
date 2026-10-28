@@ -22,7 +22,12 @@ document.addEventListener("keydown", e => {
 });
 
 function tick() {
-  if (tick.day && tick.day !== today()) { tick.day = today(); U.tmDate = today(); render(); return; }
+  if (tick.day && tick.day !== today()) { // наступила полночь: переходим на новый день, если смотрели «сегодня»
+    const prev = tick.day; tick.day = today(); U.tmDate = today();
+    if (U.trDate === prev) U.trDate = today();
+    if (U.trMonth === mkey(prev)) U.trMonth = mkey(today());
+    saveUI(); softRender(); return;
+  }
   tick.day = today();
   tickTimers();
   if (!anyRunning()) return;
