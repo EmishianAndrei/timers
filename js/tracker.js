@@ -29,7 +29,36 @@ function sleepMin(k) {
   let d = w - b; if (d < 0) d += 1440; return d;
 }
 // приём пищи: «№|чч:мм»
-const mealParts = v => { const [num = "", time = ""] = String(v || "").split("|"); return {num: num.trim(), time: time.trim()}; };
+// приём пищи: «№|чч:мм|кол-во» — кол-во: граммы для продукта, порции для рецепта
+const mealParts = v => { const [num = "", time = "", amt = ""] = String(v || "").split("|"); return {num: num.trim(), time: time.trim(), amt: amt.trim()}; };
+/** количество по умолчанию: продукт — вся упаковка (или 100), рецепт — 1 порция */
+const defAmt = r => !r ? null : r.kind === "product" ? (toNum(r.pack) || 100) : 1;
+const amtUnit = r => r && r.kind === "product" ? (r.unit || "г") : "порц.";
+/** КБЖУ: у продукта — на 100 г/мл, у рецепта — на порцию */
+const NUTRK = ["kcal", "prot", "fat", "carb"];
+function nutrOf(r, amt) {
+  if (!r) return null; const a = amt == null || amt === "" ? defAmt(r) : toNum(amt); if (a == null) return null;
+  const f = r.kind === "product" ? a / 100 : a, o = {}; let any = false;
+  for (const k of NUTRK) { const v = toNum(r[k]); o[k] = v == null ? 0 : v * f; if (v != null) any = true; }
+  return any ? o : null;
+}
+/** КБЖУ за день: все приёмы пищи + строки «Продукт из списка» (вся упаковка) */
+function dayNutr(k) {
+  const tot = {kcal: 0, prot: 0, fat: 0, carb: 0}, list = []; let missing = 0;
+  for (const it of items()) {
+    if (!active(it, k)) continue;
+    const v = val(k, it.id); if (!v) continue;
+    let r = null, amt = null;
+    if (it.type === "meal") { const p = mealParts(v); r = recipeByNum(p.num); amt = p.amt; if (!p.num) continue; }
+    else if (it.type === "product") r = recipeByNum(v);
+    else continue;
+    const n = nutrOf(r, amt);
+    if (!n) { missing++; continue; }
+    NUTRK.forEach(x => tot[x] += n[x]);
+    list.push({it, r, n, amt: amt || defAmt(r)});
+  }
+  return {tot, list, missing};
+}
 // код блюда: «3» — рецепт №3, «П1» — продукт П1 (нумерация у рецептов и продуктов своя)
 const foodCode = r => (r.kind === "product" ? "П" : "") + r.num;
 function parseFoodCode(code) {
@@ -80,10 +109,10 @@ function control(k, it) {
       return `${badge}<span class="step"><button type="button" data-act="dur" data-d="${k}" data-id="${it.id}" data-n="-15" aria-label="Минус 15 минут">−</button><input type="text" class="dur num" inputmode="numeric" data-chg="dur" data-d="${k}" data-id="${it.id}" value="${shown ? fmtMin(shown) : ""}" placeholder="0:00" aria-label="${esc(it.name)}, ч:мм"><button type="button" data-act="dur" data-d="${k}" data-id="${it.id}" data-n="15" aria-label="Плюс 15 минут">+</button></span>`;
     }
     case "meal": {
-      const {num, time} = mealParts(v);
+      const {num, time, amt} = mealParts(v);
       const {recipes, products} = mealFoods(it), cur = recipeByNum(num);
       const og = (label, list) => list.length ? `<optgroup label="${label}">${list.map(r => opt(foodCode(r), foodLabel(r), cur && cur.id === r.id)).join("")}</optgroup>` : "";
-      return `<span class="meal"><select class="mnum" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="num" aria-label="Блюдо или продукт" style="max-width:13em">${opt("", "—", !num)}${og("Рецепты", recipes)}${og("Продукты", products)}${num && !cur ? opt(num, num + " (нет в списке)", true) : ""}</select><input type="time" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="time" value="${esc(time)}" aria-label="Время приёма"></span>`;
+      return `<span class="meal"><select class="mnum" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="num" aria-label="Блюдо или продукт" style="max-width:13em">${opt("", "—", !num)}${og("Рецепты", recipes)}${og("Продукты", products)}${num && !cur ? opt(num, num + " (нет в списке)", true) : ""}</select>${cur ? `<span class="amt"><input type="text" inputmode="decimal" class="num" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="amt" value="${esc(amt)}" placeholder="${fnum(defAmt(cur))}" aria-label="Количество" data-tip="Сколько съели: ${amtUnit(cur)}"><i>${amtUnit(cur)}</i></span>` : ""}<input type="time" data-chg="meal" data-d="${k}" data-id="${it.id}" data-part="time" value="${esc(time)}" aria-label="Время приёма"></span>`;
     }
     case "number": return `<input type="number" inputmode="decimal" step="any" ${a} value="${esc(v)}" aria-label="${esc(it.name)}">`;
     case "product": {
@@ -98,8 +127,15 @@ function control(k, it) {
 }
 function itemLabel(k, it) {
   if (it.type !== "meal") return esc(it.name);
-  const {num} = mealParts(val(k, it.id)), r = recipeByNum(num);
-  return `${esc(it.name)}${num ? `<div class="small ${r ? "muted" : ""}">${r ? esc(r.short ? r.name : "") : `<button type="button" class="linkbtn" data-act="newRecipe" data-num="${esc(num)}">Нет ${parseFoodCode(num)?.kind === "product" ? "продукта" : "блюда"} ${esc(num)}, добавить</button>`}</div>` : ""}`;
+  const {num, amt} = mealParts(val(k, it.id)), r = recipeByNum(num), n = nutrOf(r, amt);
+  return `${esc(it.name)}${num ? `<div class="small ${r ? "muted" : ""}">${r ? [r.short ? esc(r.name) : "", n ? `<span class="num">${Math.round(n.kcal)} ккал</span>` : ""].filter(Boolean).join(" · ") : `<button type="button" class="linkbtn" data-act="newRecipe" data-num="${esc(num)}">Нет ${parseFoodCode(num)?.kind === "product" ? "продукта" : "блюда"} ${esc(num)}, добавить</button>`}</div>` : ""}`;
+}
+function nutrSummary(k) {
+  const {tot, list, missing} = dayNutr(k);
+  if (!list.length && !missing) return "";
+  return `<div class="sum"><span>Питание</span><span class="num">${Math.round(tot.kcal)} ккал</span></div>
+    <div class="macros">${[["prot", "Белки"], ["fat", "Жиры"], ["carb", "Углеводы"]].map(([x, l]) => `<span><b class="num">${fnum(tot[x], 0)}</b> г <i>${l}</i></span>`).join("")}</div>
+    ${missing ? `<p class="muted small">У ${missing} записей нет КБЖУ. Впишите их в карточке рецепта или продукта.</p>` : ""}`;
 }
 function trackerDay() {
   const k = U.trDate, t0 = today(), its = items().filter(i => active(i, k));
@@ -116,7 +152,7 @@ function trackerDay() {
   return `<div class="bar">${dnav("trDay", k === t0 ? "Сегодня, " + short(k) : human(k))}${k !== t0 ? `<button type="button" class="btn btn-sm" data-act="trToday">Сегодня</button>` : ""}</div>
     <datalist id="recipeNums">${recipesSorted().map(r => `<option value="${esc(foodCode(r))}">${esc(r.name)}</option>`).join("")}</datalist>
     <div class="grid2">${secs}${orphan.length ? secHtml("Без раздела", orphan, null) : ""}</div>
-    <section class="panel"><div class="sum"><span>Всего времени за день</span><span class="num">${fmtMin(durTotal)}</span></div></section>`;
+    <section class="panel"><div class="sum"><span>Всего времени за день</span><span class="num">${fmtMin(durTotal)}</span></div>${nutrSummary(k)}</section>`;
 }
 
 // ---------- Месяц (таблица) ----------
@@ -125,7 +161,7 @@ function cellText(k, it) {
   switch (it.type) {
     case "check": return v === "TRUE" ? `<span class="on">✓</span>` : "";
     case "duration": { const man = toNum(v); if (man != null) return man ? fmtMin(man) : ""; const a = autoMin(k, it.id); return a ? `<span class="av">${fmtMin(a)}</span>` : ""; }
-    case "meal": { const {num, time} = mealParts(v); if (!num && !time) return ""; const r = recipeByNum(num); return `<span data-tip="${esc((r ? r.name : num ? num + " (нет в рецептах и продуктах)" : "без блюда") + (time ? "\n" + time : ""))}">${num ? esc(num) : "•"}</span>`; }
+    case "meal": { const {num, time, amt} = mealParts(v); if (!num && !time) return ""; const r = recipeByNum(num), n = nutrOf(r, amt); return `<span data-tip="${esc((r ? r.name : num ? num + " (нет в рецептах и продуктах)" : "без блюда") + (r ? "\n" + fnum(toNum(amt) ?? defAmt(r)) + " " + amtUnit(r) : "") + (n ? " · " + Math.round(n.kcal) + " ккал" : "") + (time ? "\n" + time : ""))}">${r ? "№" + esc(r.num) : num ? esc(num) : "•"}</span>`; }
     case "number": { const n = toNum(v); return n == null ? "" : n >= 10000 ? fnum(n / 1000, 1) + "к" : fnum(n, 2); }
     case "product": { if (!v) return ""; const r = recipeByNum(v); return r ? `<span data-tip="${esc(r.name)}">№${esc(r.num)}</span>` : `<span data-tip="старая запись">${toNum(v) != null ? fnum(toNum(v), 3) : esc(v)}</span>`; }
     case "choice": { const n = toNum(v); return n == null ? esc(v) : fnum(n, 3); }
@@ -261,7 +297,9 @@ function trackerCharts() {
   <section class="panel"><h3>Сон</h3>${sleepHtml}</section>
   ${checks.length ? `<section class="panel"><div class="bar"><h3>Привычки</h3><span class="muted small">клетка = день, закрашена = сделано</span></div><div class="hgrid">${habits}</div></section>` : ""}
   ${nums.length || times.length ? `<section class="panel"><h3>Числа и время</h3><div class="hgrid">${numRows}${timeRows}</div><p class="muted small">Для чисел высота столбика — значение за день, для времени суток точка выше = позже (шкала 06:00–24:00).</p></section>` : ""}
-  ${meals.length ? `<section class="panel"><h3>Питание</h3><div class="hgrid">${mealRows}</div></section>` : ""}`;
+  ${meals.length ? `<section class="panel"><h3>Питание</h3><div class="hgrid">${mealRows}</div>${kcalChart(days)}</section>` : ""}
+  ${habitStatsHtml()}
+  ${insightsHtml()}`;
 }
 
 // ---------- Настройка строк ----------
@@ -338,7 +376,10 @@ Object.assign(CHG, {
   meal: el => {
     const box = el.closest(".meal");
     const raw = box.querySelector("[data-part=num]").value.trim(), num = parseFoodCode(raw)?.code || raw, time = box.querySelector("[data-part=time]").value.trim();
-    setVal(el.dataset.d, el.dataset.id, num || time ? num + "|" + time : "");
+    const prev = mealParts(val(el.dataset.d, el.dataset.id));
+    let amt = el.dataset.part === "num" && num !== prev.num ? "" : (box.querySelector("[data-part=amt]")?.value.trim() || "");
+    if (amt !== "") { const n = toNum(amt); amt = n == null || n <= 0 ? "" : String(n); }
+    setVal(el.dataset.d, el.dataset.id, num || time ? num + "|" + time + (amt ? "|" + amt : "") : "");
   },
   item: el => patch("items", el.dataset.id, {[el.dataset.f]: el.value.trim()}),
   section: el => patch("sections", el.dataset.id, {[el.dataset.f]: el.type === "checkbox" ? el.checked : el.value.trim()}),

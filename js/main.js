@@ -2,7 +2,9 @@
 /* Запуск: обработчики событий, вкладки, ежесекундный тик. */
 
 Object.assign(ACT, {
-  tab: el => { U.tab = el.dataset.tab; U.menu = null; U.modal = null; saveUI(); history.replaceState(null, "", "#" + U.tab); render(); window.scrollTo(0, 0); },
+  moreMenu: () => { $("#moreSheet").hidden = false; },
+  moreClose: (el, e) => { if (e.target === el) el.hidden = true; },
+  tab: el => { $("#moreSheet").hidden = true; U.tab = el.dataset.tab; U.menu = null; U.modal = null; saveUI(); history.replaceState(null, "", "#" + U.tab); render(); window.scrollTo(0, 0); },
 });
 
 document.addEventListener("click", e => {
@@ -31,7 +33,7 @@ function tick() {
   tick.day = today();
   tickTimers();
   if (!anyRunning()) return;
-  if (U.tab === "timers" && Date.now() % 10000 < 1000 && !isEditing() && U.tmDate === today()) render();
+  if ((U.tab === "timers" || U.tab === "today") && Date.now() % 10000 < 1000 && !isEditing() && U.tmDate === today()) render();
   else if (U.tab === "tracker" && Date.now() % 60000 < 1000) softRender();
 }
 
@@ -52,7 +54,9 @@ function migrateV1() {
 }
 
 load();
+U.tab = "today"; // при открытии — экран «Сегодня»
 const h0 = location.hash.slice(1); if (VIEWS[h0]) U.tab = h0;
+afterRender.push(() => { const extra = ["finance", "goals", "settings"].includes(U.tab); const mb = document.querySelector("#tabs .morebtn"); if (mb) mb.setAttribute("aria-current", extra ? "page" : "false"); });
 migrateV1();
 render();
 setSync(S.cfg.url ? "ok" : "off");

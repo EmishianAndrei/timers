@@ -58,8 +58,11 @@ select{padding-right:6px}
 .sync.ok i{background:var(--good)} .sync.busy i{background:var(--accent);animation:pulse 1s infinite} .sync.err i{background:var(--bad)} .sync.off i{background:var(--warn)}
 .tabs{display:flex;gap:2px;overflow-x:auto;width:100%;scrollbar-width:none;margin-top:4px}
 .tabs::-webkit-scrollbar{display:none}
-.tabs button{padding:10px 14px;border-bottom:2px solid transparent;color:var(--muted);font-weight:500;white-space:nowrap}
-.tabs button[aria-current=page]{color:var(--fg);border-color:var(--accent)}
+.tabs button{display:inline-flex;align-items:center;gap:7px;padding:10px 12px;border-bottom:2px solid transparent;color:var(--muted);font-weight:500;white-space:nowrap}
+.tabs button svg{flex:none;opacity:.85}
+.tabs button:hover{color:var(--fg)}
+.tabs button[aria-current=page]{color:var(--accent);border-color:var(--accent)}
+.tabs .morebtn{display:none}
 main{padding-block:20px 60px}
 .view{display:flex;flex-direction:column;gap:20px}
 
@@ -338,6 +341,104 @@ button.gt-chip:hover{background:var(--surface-2)}
 .btn-dangerfill{border:0;background:transparent;color:var(--red)}
 .btn-flat:hover,.btn-flat-primary:hover,.btn-dangerfill:hover{background:var(--gblue-soft)}
 
+/* ===== v4: «Сегодня», серии, карта, инсайты, бюджеты, нижнее меню ===== */
+.panel{box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.hello{font-size:24px;font-weight:700;letter-spacing:-.01em}
+.tile.tbtn{text-align:left;display:flex;flex-direction:column;gap:2px;cursor:pointer;transition:border-color .15s}
+.tile.tbtn:hover{border-color:var(--accent)}
+.tile .v{font-size:22px}
+.pbar,.bbar{display:block;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden;margin-top:6px;position:relative}
+.pbar i{display:block;height:100%;background:var(--good);border-radius:3px}
+.dash{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;align-items:start}
+.tlist{display:flex;flex-direction:column}
+.trow{--c:var(--accent);display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:7px 0;border-top:1px dashed var(--line)}
+.trow:first-child{border-top:0}
+.trow .tval{font-size:15px;color:var(--muted)}
+.trow.run .tval{color:var(--fg);font-weight:600}
+.trow .tval.over{color:var(--bad)}
+.trow .go{padding:5px 12px;min-width:44px}
+.trow.run .go{background:var(--c);border-color:var(--c);color:#fff}
+.trow.run .dot{animation:pulse 1.6s infinite}
+.hgroup{display:flex;flex-direction:column;gap:2px}
+.hgroup+.hgroup{margin-top:8px}
+.hcheck{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:9px;cursor:pointer}
+.hcheck:hover{background:var(--surface-2)}
+.hcheck input{width:20px;height:20px;accent-color:var(--good)}
+.hcheck .hc-t{flex:1}
+.hcheck.on .hc-t{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line)}
+.st{font-size:12.5px;color:var(--warn);font-weight:600;white-space:nowrap}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chipbtn{padding:5px 12px;border-radius:999px;border:1px solid var(--line);font-size:13.5px;background:var(--surface)}
+.chipbtn.on{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.today-tasks .gt-task{grid-template-columns:0 32px minmax(0,1fr) 28px;padding:4px 0}
+.today-tasks .gt-star{opacity:1;pointer-events:none}
+.macros{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13.5px}
+.macros i{font-style:normal;color:var(--muted)}
+.amt{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:9px;background:var(--surface);padding-right:8px}
+.amt input{border:0;width:4.2em;text-align:right;padding:8px 4px 8px 8px;background:transparent}
+.amt i{font-style:normal;color:var(--muted);font-size:12.5px}
+.meal{flex-wrap:wrap;justify-content:flex-end}
+.item:has(.meal){flex-wrap:wrap;gap:6px 12px}
+.item:has(.meal) .lbl{flex:1 1 160px}
+.item:has(.meal) .ctl{flex:1 1 auto;justify-content:flex-end}
+.streaks{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+.streak{text-align:left;border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;background:var(--surface)}
+.streak:hover{border-color:var(--muted)}
+.streak.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.streak .sn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.streak .sv{display:flex;align-items:baseline;gap:3px;font-size:18px}
+.streak .sv i{font-style:normal;font-size:14px}
+.streak .sm{grid-column:1/-1}
+.streak .sbar{grid-column:1/-1;height:5px}
+.hmwrap{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px;overflow-x:auto}
+.hmdays{display:grid;grid-template-rows:14px repeat(7,12px);gap:3px;font-size:10px;color:var(--muted)}
+.hmgrid{display:grid;grid-auto-flow:column;grid-auto-columns:12px;gap:3px}
+.hmc{display:grid;grid-template-rows:14px repeat(7,12px);gap:3px}
+.hmm{font-size:10px;color:var(--muted);white-space:nowrap}
+.hm{display:inline-block;width:12px;height:12px;border-radius:3px;background:var(--surface-2);border:1px solid var(--line)}
+.hm.f,.hm.l-1{background:transparent;border-color:transparent}
+.hm.l1{background:color-mix(in srgb,var(--good) 30%,var(--surface));border-color:transparent}
+.hm.l2{background:color-mix(in srgb,var(--good) 55%,var(--surface));border-color:transparent}
+.hm.l3{background:color-mix(in srgb,var(--good) 78%,var(--surface));border-color:transparent}
+.hm.l4{background:var(--good);border-color:transparent}
+.hmleg{display:flex;align-items:center;gap:4px;justify-content:flex-end}
+.insights{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.ins{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px;background:var(--surface-2)}
+.ins p{margin:0;font-size:14.5px}
+.ins-tag{font-size:12px;font-weight:600;width:max-content;padding:2px 8px;border-radius:999px}
+.ins-tag.up{background:var(--good-soft);color:var(--good)}
+.ins-tag.down{background:var(--bad-soft);color:var(--bad)}
+.kc{height:60px}
+.budgets{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.bud{display:flex;flex-direction:column;gap:4px}
+.bbar{height:8px;overflow:visible}
+.bbar i{display:block;height:100%;border-radius:4px;background:var(--good)}
+.bud.warn .bbar i{background:var(--warn)}
+.bud.over .bbar i{background:var(--bad)}
+.bbar s{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--fg);opacity:.45}
+.sess summary{cursor:pointer;color:var(--accent);font-size:14px;margin-top:4px}
+.sess .op{display:flex;gap:10px;align-items:center;padding:6px 0;border-top:1px dashed var(--line)}
+.sess .op .n{flex:1;min-width:0}
+.sheet-bg{position:fixed;inset:0;z-index:45;background:rgba(16,20,27,.35);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:10px 0 calc(74px + env(safe-area-inset-bottom,0px));box-shadow:0 -6px 24px rgba(0,0,0,.18)}
+.sheet .pop-i{gap:14px;padding:14px 22px;font-size:15.5px}
+.sheet svg{color:var(--muted)}
+@media (max-width:720px){
+  main{padding-bottom:96px}
+  .top .wrap{padding-block:8px}
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:50;margin:0;background:var(--surface);border-top:1px solid var(--line);justify-content:space-around;gap:0;overflow:visible;
+    padding:4px max(6px,env(safe-area-inset-left,0px)) calc(4px + env(safe-area-inset-bottom,0px)) max(6px,env(safe-area-inset-right,0px));box-shadow:0 -2px 10px rgba(16,24,40,.06)}
+  .tabs button{flex:1 1 0;flex-direction:column;gap:2px;padding:6px 2px;border-bottom:0;border-radius:10px;font-size:11px;min-width:0}
+  .tabs button span{overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .tabs button svg{width:22px;height:22px}
+  .tabs button[aria-current=page]{background:var(--accent-soft)}
+  .tabs .extra{display:none}
+  .tabs .morebtn{display:flex}
+  .hello{font-size:20px}
+  .dash{grid-template-columns:1fr}
+  .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+}
+
 @media (max-width:720px){
   .tasks{grid-template-columns:1fr}
   .lists{display:none}
@@ -354,24 +455,33 @@ button.gt-chip:hover{background:var(--surface-2)}
     <span class="brand">Трекер</span>
     <button type="button" class="sync off" id="syncChip" data-act="tab" data-tab="settings"><i></i><span>Не подключено</span></button>
     <nav class="tabs" id="tabs" aria-label="Разделы">
-      <button type="button" data-act="tab" data-tab="timers">Таймеры</button>
-      <button type="button" data-act="tab" data-tab="tracker">Трекер</button>
-      <button type="button" data-act="tab" data-tab="tasks">Задачи</button>
-      <button type="button" data-act="tab" data-tab="recipes">Еда</button>
-      <button type="button" data-act="tab" data-tab="finance">Финансы</button>
-      <button type="button" data-act="tab" data-tab="goals">Цели</button>
-      <button type="button" data-act="tab" data-tab="settings">Настройки</button>
+      <button type="button" data-act="tab" data-tab="today"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg><span>Сегодня</span></button>
+      <button type="button" data-act="tab" data-tab="timers"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9.5 2.5h5"/></svg><span>Таймеры</span></button>
+      <button type="button" data-act="tab" data-tab="tracker"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span>Трекер</span></button>
+      <button type="button" data-act="tab" data-tab="tasks"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/></svg><span>Задачи</span></button>
+      <button type="button" data-act="tab" data-tab="recipes"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v8M5 3v5a2 2 0 0 0 4 0V3M7 11v10M17 21V3c-2.2 1.2-3.5 3.6-3.5 7v4H17"/></svg><span>Еда</span></button>
+      <button type="button" data-act="tab" data-tab="finance" class="extra"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18M16 15h2"/><path d="M6 6l9-3 1.2 3"/></svg><span>Финансы</span></button>
+      <button type="button" data-act="tab" data-tab="goals" class="extra"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg><span>Цели</span></button>
+      <button type="button" data-act="tab" data-tab="settings" class="extra"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Настройки</span></button>
+      <button type="button" class="morebtn" data-act="moreMenu" aria-haspopup="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>Ещё</span></button>
     </nav>
   </div>
 </header>
 <main class="wrap" id="main"></main>
+<div class="sheet-bg" id="moreSheet" hidden data-act="moreClose"><div class="sheet" role="menu">
+  <button type="button" class="pop-i" data-act="tab" data-tab="finance"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18M16 15h2"/><path d="M6 6l9-3 1.2 3"/></svg><span class="pop-t">Финансы</span></button>
+  <button type="button" class="pop-i" data-act="tab" data-tab="goals"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg><span class="pop-t">Цели</span></button>
+  <button type="button" class="pop-i" data-act="tab" data-tab="settings"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="pop-t">Настройки</span></button>
+</div></div>
 <div class="toast" id="toast" hidden></div>
-<script src="js/core.js?v=202610281053"></script>
-<script src="js/timers.js?v=202610281053"></script>
-<script src="js/tracker.js?v=202610281053"></script>
-<script src="js/recipes.js?v=202610281053"></script>
-<script src="js/tasks.js?v=202610281053"></script>
-<script src="js/money.js?v=202610281053"></script>
-<script src="js/main.js?v=202610281053"></script>
+<script src="js/core.js?v=202610301125"></script>
+<script src="js/timers.js?v=202610301125"></script>
+<script src="js/tracker.js?v=202610301125"></script>
+<script src="js/recipes.js?v=202610301125"></script>
+<script src="js/tasks.js?v=202610301125"></script>
+<script src="js/money.js?v=202610301125"></script>
+<script src="js/insights.js?v=202610301125"></script>
+<script src="js/today.js?v=202610301125"></script>
+<script src="js/main.js?v=202610301125"></script>
 </body>
 </html>

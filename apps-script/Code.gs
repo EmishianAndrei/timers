@@ -34,7 +34,7 @@ const SCHEMA = {
   triggers:   ['id', 'trigger', 'action', 'done', 'order', 'updated'],
   skills:     ['id', 'category', 'name', 'order', 'updated'],
   wishes:     ['id', 'person', 'name', 'done', 'order', 'updated'],
-  finCats:    ['id', 'group', 'name', 'kind', 'inTotal', 'order', 'archived', 'updated'],
+  finCats:    ['id', 'group', 'name', 'kind', 'inTotal', 'budget', 'order', 'archived', 'updated'],
   finOps:     ['id', 'date', 'catId', 'amount', 'note', 'updated'],
   debts:      ['id', 'name', 'base', 'order', 'archived', 'updated'],
   debtOps:    ['id', 'debtId', 'date', 'amount', 'note', 'updated'],

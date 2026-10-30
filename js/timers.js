@@ -191,14 +191,15 @@ function timerStats() {
   const wk = {}; data.forEach(d => d.ids.forEach(id => wk[id] = (wk[id] || 0) + d.s[id]));
   const legend = Object.keys(wk).sort((a, b) => wk[b] - wk[a]);
   return `<section class="panel"><div class="bar"><h2>Итоги дня</h2><div class="row">${dnav("tmDay", k === t0 ? "Сегодня" : human(k), k < t0)}${k !== t0 ? `<button type="button" class="btn btn-sm" data-act="tmToday">Сегодня</button>` : ""}</div></div>
-    <div id="tmStats">${body}</div></section>
+    <div id="tmStats">${body}</div>${sessionsHtml(k)}</section>
     <section class="panel"><div class="bar"><h2>7 дней</h2><span class="muted small">${wt ? "всего " + fmtH(wt) : ""}</span></div>
     <div class="week"><div class="yax">${ticks.map(h => `<span style="bottom:${h / top * 100}%">${h} ч</span>`).join("")}</div>
     <div class="plot">${ticks.slice(1).map(h => `<div class="gl" style="bottom:${h / top * 100}%"></div>`).join("")}
     <div class="cols">${data.map(d => `<div class="col${d.d === k ? " sel" : ""}" style="height:${(d.total / (top * 3600000) * 100).toFixed(2)}%">${d.ids.map(id => `<i style="height:${(d.s[id] / d.total * 100).toFixed(2)}%;background:${tm(id).color}" data-tip="${esc(tm(id).name)}\n${short(d.d)} · ${fmtH(d.s[id])}"></i>`).join("")}</div>`).join("")}</div></div>
     <div class="xax">${data.map(d => `<button type="button" data-act="tmPick" data-d="${d.d}"><b>${WD[dateOf(d.d).getDay()]}</b>${parts(d.d)[2]}.${pad(parts(d.d)[1])}<br><span class="num">${d.total ? fmtH(d.total).replace(" мин", "м").replace(" ч", "ч") : "—"}</span></button>`).join("")}</div></div>
     ${legend.length ? `<div class="legend">${legend.map(id => `<span class="lg" data-tip="${esc(tm(id).name)} · ${fmtH(wk[id])} за 7 дней"><span class="dot" style="--c:${tm(id).color}"></span>${esc(tm(id).name)} <span class="muted num">${fmtH(wk[id])}</span></span>`).join("")}</div>` : ""}
-    </section>`;
+    </section>
+    ${reportHtml()}`;
 }
 
 // ---------- действия ----------
@@ -236,7 +237,7 @@ function tickTimers() {
   const now = Date.now(), running = all("timers").filter(t => t.runningSince);
   const cd = running.find(t => t.cdMin);
   document.title = cd ? (cdRemaining(cd, now) < 0 ? "+" : "") + fmtCd(cdRemaining(cd, now)) + " · " + cd.name : running[0] ? fmt(now - running[0].runningSince) + " · " + running[0].name : "Трекер";
-  if (!running.length || U.tab !== "timers") return;
+  if (!running.length || (U.tab !== "timers" && U.tab !== "today")) return;
   const sp = spentDay(today(), now);
   for (const t of all("timers")) {
     const el = document.querySelector(`[data-live="${t.id}"]`); if (!el) continue;
@@ -247,3 +248,51 @@ function tickTimers() {
   }
   document.querySelectorAll("[data-livegroup]").forEach(el => { const g = el.dataset.livegroup; el.textContent = fmt(timersList().filter(t => (t.group || "") === g).reduce((a, t) => a + (sp[t.id] || 0), 0)); });
 }
+
+// ---------- сессии дня: просмотр, удаление, ручное добавление ----------
+function sessionsHtml(k) {
+  const ss = all("sessions").filter(x => x.date === k).sort((a, b) => a.start - b.start);
+  const hm = t => { const d = new Date(t); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+  const tm = id => get("timers", id) || {name: "Удалённый таймер", color: "#888"};
+  const ts = timersList();
+  return `<details class="sess"${U.openSess ? " open" : ""}><summary data-act="toggleSess">Сессии за день (${ss.length}) и добавить вручную</summary>
+    ${ss.map(x => `<div class="op"><span class="dot" style="--c:${tm(x.timerId).color}"></span><span class="n">${esc(tm(x.timerId).name)}</span><span class="num muted">${hm(x.start)}–${hm(x.end)}</span><span class="num">${fmtMin((x.end - x.start) / 60000)}</span><button type="button" class="icon" data-act="delSession" data-id="${x.id}" aria-label="Удалить сессию">×</button></div>`).join("") || `<p class="empty">Сессий нет.</p>`}
+    ${ts.length ? `<form class="form" data-form="addSession" data-d="${k}" autocomplete="off" style="margin-top:8px">
+      <select name="timer" aria-label="Таймер">${ts.map(t => opt(t.id, t.name)).join("")}</select>
+      <input type="time" name="from" required aria-label="С"><span class="muted">–</span><input type="time" name="to" required aria-label="По">
+      <button class="btn btn-sm btn-primary" type="submit">Добавить</button><span class="muted small">забыли включить таймер — впишите время</span></form>` : ""}
+  </details>`;
+}
+// ---------- отчёт за неделю / месяц / год ----------
+function reportHtml() {
+  const per = U.repPer || "week", t0 = today();
+  const from = per === "week" ? weekStart(t0) : per === "month" ? mkey(t0) + "-01" : t0.slice(0, 4) + "-01-01";
+  const days = Math.round((dateOf(t0) - dateOf(from)) / 864e5) + 1;
+  const tot = {}; all("sessions").forEach(x => { if (x.date >= from && x.date <= t0) tot[x.timerId] = (tot[x.timerId] || 0) + (x.end - x.start); });
+  const live = spentDay(t0); all("timers").forEach(t => { if (t.runningSince) tot[t.id] = (tot[t.id] || 0) - (all("sessions").filter(x => x.date === t0 && x.timerId === t.id).reduce((a, x) => a + x.end - x.start, 0)) + (live[t.id] || 0); });
+  const ids = Object.keys(tot).filter(id => tot[id] > 0).sort((a, b) => tot[b] - tot[a]);
+  const sum = ids.reduce((a, id) => a + tot[id], 0), max = tot[ids[0]] || 1;
+  const tm = id => get("timers", id) || {name: "Удалённый таймер", color: "#888", group: ""};
+  const groups = {}; ids.forEach(id => { const g = tm(id).group || "Без группы"; groups[g] = (groups[g] || 0) + tot[id]; });
+  const seg = (v, l) => `<button type="button" data-act="repPer" data-v="${v}" aria-pressed="${per === v}">${l}</button>`;
+  return `<section class="panel"><div class="bar"><h2>Отчёт</h2><div class="seg">${seg("week", "Неделя")}${seg("month", "Месяц")}${seg("year", "Год")}</div></div>
+    ${ids.length ? `<div class="row" style="gap:6px 18px;align-items:baseline"><span class="num" style="font-size:26px;font-weight:600">${fmtMin(sum / 60000)}</span><span class="muted">всего · в среднем ${fmtMin(sum / 60000 / days)} в день</span>
+      ${Object.keys(groups).length > 1 ? Object.entries(groups).sort((a, b) => b[1] - a[1]).map(([g, v]) => `<span class="chip">${esc(g)}: ${fmtMin(v / 60000)}</span>`).join("") : ""}</div>
+    <div class="rows">${ids.map(id => `<div class="srow"><span class="n"><span class="dot" style="--c:${tm(id).color}"></span><span>${esc(tm(id).name)}</span></span><span class="num">${fmtMin(tot[id] / 60000)}</span><span class="p num">${Math.round(tot[id] / sum * 100)}%</span><span class="sbar"><i style="width:${(tot[id] / max * 100).toFixed(1)}%;background:${tm(id).color}"></i></span></div>`).join("")}</div>`
+    : `<p class="empty">За этот период таймеры не запускали.</p>`}</section>`;
+}
+Object.assign(ACT, {
+  delSession: el => { const x = get("sessions", el.dataset.id); if (!x) return; U.openSess = true; del("sessions", x.id); toast("Сессия удалена", 5000, {label: "Отменить", fn: () => put("sessions", x)}); },
+  toggleSess: (el, e) => { e.preventDefault(); U.openSess = !U.openSess; render(); },
+  repPer: el => { U.repPer = el.dataset.v; saveUI(); render(); },
+});
+Object.assign(FORM, {
+  addSession: f => {
+    const k = f.dataset.d, a = hm2min(fv(f, "from")), b = hm2min(fv(f, "to")), t = get("timers", fv(f, "timer"));
+    if (a == null || b == null || !t) return toast("Укажите время начала и конца");
+    let s = dayStart(k) + a * 60000, e = dayStart(k) + b * 60000; if (e <= s) e += 864e5;
+    U.openSess = true;
+    batch(() => addSessions(t, s, e));
+    toast("Добавлено: " + t.name + " · " + fmtMin((e - s) / 60000));
+  },
+});

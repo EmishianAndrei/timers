@@ -33,6 +33,7 @@ VIEWS.finance = () => {
     <div class="tile"><div class="label">Баланс месяца</div><div class="v ${inc + exp >= 0 ? "pos" : "neg"}">${money(inc + exp)}</div></div>
     <div class="tile"><div class="label">Долги</div><div class="v ${dTot >= 0 ? "pos" : "neg"}">${money(dTot)}</div></div>
   </div>
+  ${budgetsHtml(mk, byCat, catOf)}
   <section class="panel"><h3>Добавить операцию</h3>
     <form class="form" data-form="addOp" autocomplete="off">
       <input type="date" name="date" value="${today()}" aria-label="Дата">
@@ -57,6 +58,7 @@ VIEWS.finance = () => {
   <section class="panel"><div class="bar"><h3>Категории</h3><button type="button" class="btn btn-sm" data-act="toggle" data-k="showCats">${U.showCats ? "Свернуть" : "Изменить"}</button></div>
     ${U.showCats ? `${cats.map(c => `<div class="row small"><input type="text" data-chg="cat" data-id="${c.id}" data-f="group" value="${esc(c.group)}" style="width:9em" aria-label="Группа"><input type="text" data-chg="cat" data-id="${c.id}" data-f="name" value="${esc(c.name)}" style="flex:1 1 120px" aria-label="Название">
         <select data-chg="cat" data-id="${c.id}" data-f="kind" aria-label="Тип">${opt("expense", "расход", c.kind !== "income")}${opt("income", "доход", c.kind === "income")}</select>
+        ${c.kind !== "income" ? `<label class="row">лимит/мес<input type="text" inputmode="decimal" data-chg="cat" data-id="${c.id}" data-f="budget" value="${esc(c.budget ?? "")}" placeholder="—" style="width:6.5em"></label>` : ""}
         <label class="row"><input type="checkbox" data-chg="cat" data-id="${c.id}" data-f="inTotal" ${c.inTotal ? "checked" : ""}>в итоге</label>
         <label class="row"><input type="checkbox" data-chg="cat" data-id="${c.id}" data-f="archived" ${c.archived ? "checked" : ""}>скрыта</label></div>`).join("")}
       <form class="form" data-form="addCat"><input type="text" name="group" placeholder="Группа" style="width:9em" required aria-label="Группа"><input type="text" name="name" placeholder="Категория" required style="flex:1 1 120px" aria-label="Категория"><select name="kind" aria-label="Тип">${opt("expense", "расход", true)}${opt("income", "доход")}</select><button class="btn btn-sm" type="submit">Добавить</button></form>` : `<p class="muted small">${activeCats.length} категорий в ${groups.length} группах.</p>`}
@@ -184,7 +186,7 @@ Object.assign(ACT, {
 });
 Object.assign(CHG, {
   finCatPick: el => { U.finCat = el.value; U.finSign = null; const keep = $("[data-form=addOp]") ? Object.fromEntries(new FormData($("[data-form=addOp]"))) : {}; render(); const f = $("[data-form=addOp]"); if (f) { f.elements.date.value = keep.date || today(); f.elements.amount.value = keep.amount || ""; f.elements.note.value = keep.note || ""; } },
-  cat: el => patch("finCats", el.dataset.id, {[el.dataset.f]: el.type === "checkbox" ? el.checked : el.value.trim()}),
+  cat: el => { const f = el.dataset.f; if (f === "budget") { const n = toNum(el.value); return patch("finCats", el.dataset.id, {budget: n == null || n <= 0 ? null : Math.abs(n)}); } patch("finCats", el.dataset.id, {[f]: el.type === "checkbox" ? el.checked : el.value.trim()}); },
   goal: el => patch("goals", el.dataset.id, {[el.dataset.f]: el.type === "checkbox" ? el.checked : el.value.trim()}),
   goalSrc: el => patch("goals", el.dataset.id, {source: el.dataset.t + ":" + el.value}),
   goalFinCat: el => { const g = get("goals", el.dataset.id); const ids = new Set(g.source.slice(4).split(",").filter(Boolean)); el.checked ? ids.add(el.dataset.c) : ids.delete(el.dataset.c); patch("goals", g.id, {source: "fin:" + [...ids].join(",")}); },
@@ -228,3 +230,19 @@ Object.assign(FORM, {
     if (url && key) sync(true); else { setSync("off"); render(); }
   },
 });
+
+/** бюджеты: лимит на категорию в месяц, сколько потрачено и сколько осталось */
+function budgetsHtml(mk, byCat, catOf) {
+  const cats = all("finCats").filter(c => !c.archived && c.budget > 0).sort(byOrder);
+  if (!cats.length) return `<section class="panel"><div class="bar"><h3>Бюджеты</h3><span class="muted small">Задайте лимит на месяц в «Категории → Изменить», и здесь появится остаток.</span></div></section>`;
+  const [y, m] = mk.split("-").map(Number), dim = new Date(y, m, 0).getDate(), isCur = mk === mkey(today());
+  const dayN = isCur ? parts(today())[2] : dim, pace = dayN / dim;
+  return `<section class="panel"><div class="bar"><h3>Бюджеты</h3><span class="muted small">${isCur ? "прошло " + Math.round(pace * 100) + "% месяца" : ""}</span></div>
+    <div class="budgets">${cats.map(c => {
+      const spent = Math.max(0, -(byCat[c.id] || 0)), left = c.budget - spent, share = spent / c.budget;
+      const st = share > 1 ? "over" : share > pace + 0.1 ? "warn" : "ok";
+      return `<div class="bud ${st}"><div class="li"><span>${esc(c.name)}</span><span class="num">${money(-spent).replace("−", "")} / ${Math.round(c.budget).toLocaleString("ru-RU")} ₽</span></div>
+        <span class="bbar"><i style="width:${Math.min(100, share * 100).toFixed(1)}%"></i>${isCur ? `<s style="left:${(pace * 100).toFixed(1)}%" data-tip="Сегодняшняя точка месяца"></s>` : ""}</span>
+        <div class="small ${left < 0 ? "neg" : "muted"}">${left >= 0 ? "осталось " + Math.round(left).toLocaleString("ru-RU") + " ₽" + (isCur && dim - dayN > 0 ? " · " + Math.round(left / (dim - dayN + 1)).toLocaleString("ru-RU") + " ₽ в день" : "") : "перерасход " + Math.round(-left).toLocaleString("ru-RU") + " ₽"}</div></div>`;
+    }).join("")}</div></section>`;
+}

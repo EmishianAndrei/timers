@@ -17,7 +17,7 @@ const SCHEMA = {
   triggers:   ["id","trigger","action","done","order","updated"],
   skills:     ["id","category","name","order","updated"],
   wishes:     ["id","person","name","done","order","updated"],
-  finCats:    ["id","group","name","kind","inTotal","order","archived","updated"],
+  finCats:    ["id","group","name","kind","inTotal","budget","order","archived","updated"],
   finOps:     ["id","date","catId","amount","note","updated"],
   debts:      ["id","name","base","order","archived","updated"],
   debtOps:    ["id","debtId","date","amount","note","updated"],
@@ -25,7 +25,7 @@ const SCHEMA = {
   tasks:      ["id","listId","parent","title","notes","due","done","doneAt","starred","order","updated"],
 };
 const BOOLF = new Set(["total","archived","done","inTotal","starred","cdRang"]);
-const NUMF = new Set(["order","runningSince","created","updated","start","end","minutes","base","amount","cdMin","cdAcc","num"]);
+const NUMF = new Set(["budget","order","runningSince","created","updated","start","end","minutes","base","amount","cdMin","cdAcc","num"]);
 const PALETTE = ["#3a74d6","#e0782f","#2a9a6a","#c2417a","#7a5ad6","#b8921c","#2398ae","#d24e4e","#5b8a2f","#9a5b2e"];
 const ACT = {}, CHG = {}, FORM = {}, VIEWS = {};
 
@@ -105,7 +105,7 @@ window.addEventListener("scroll", () => tipEl.hidden = true, {passive: true});
 // ---------- хранилище ----------
 const LSKEY = "tracker-v2", UIKEY = "tracker-ui";
 let S = {cols: {}, outbox: [], cfg: {url: "", key: ""}, lastSync: 0, seq: 0};
-let U = {tab: "timers", trView: "day", trDate: today(), trMonth: mkey(today()), tmDate: today(), finMonth: mkey(today()), goalMonth: mkey(today()), list: "", showDone: false, taskSort: "my"};
+let U = {tab: "today", trView: "day", trDate: today(), trMonth: mkey(today()), tmDate: today(), finMonth: mkey(today()), goalMonth: mkey(today()), list: "", showDone: false, taskSort: "my"};
 
 function load() {
   try { const v = JSON.parse(localStorage.getItem(LSKEY) || "null"); if (v && v.cols) S = Object.assign(S, v); } catch (e) {}
