@@ -244,7 +244,10 @@ function render() {
   document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === U.tab ? "page" : "false"));
   const fn = VIEWS[U.tab] || VIEWS.timers;
   const y = window.scrollY;
+  // запоминаем прокрутку таблиц и прочих блоков, чтобы после перерисовки они не прыгали к началу
+  const sc = [...document.querySelectorAll("#main .tbl-wrap, #main [data-keep-scroll]")].map(e => [e.scrollLeft, e.scrollTop]);
   $("#main").innerHTML = `<div class="view">${fn()}</div>`;
+  document.querySelectorAll("#main .tbl-wrap, #main [data-keep-scroll]").forEach((e, i) => { if (sc[i]) { e.scrollLeft = sc[i][0]; e.scrollTop = sc[i][1]; } });
   window.scrollTo(0, y);
   tipEl.hidden = true;
   paintSync();

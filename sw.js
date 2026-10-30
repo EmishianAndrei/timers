@@ -1,6 +1,6 @@
 // Кэш для работы без интернета. Файлы сайта берутся из сети (чтобы сразу получать обновления),
 // а без сети — из кэша. Шрифты и иконки — сначала из кэша.
-const CACHE = "tracker-v14";
+const CACHE = "tracker-v15";
 const FILES = ["./", "index.html", "js/core.js", "js/timers.js", "js/tracker.js", "js/recipes.js", "js/tasks.js", "js/money.js", "js/insights.js", "js/today.js", "js/main.js", "manifest.webmanifest", "favicon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
