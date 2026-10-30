@@ -95,10 +95,11 @@ VIEWS.tracker = () => {
   const v = U.trView;
   const head = `<div class="bar"><h2>Трекер</h2><div class="seg" role="group" aria-label="Вид">
     <button type="button" data-act="trView" data-v="day" aria-pressed="${v === "day"}">День</button>
+    <button type="button" data-act="trView" data-v="week" aria-pressed="${v === "week"}">Неделя</button>
     <button type="button" data-act="trView" data-v="month" aria-pressed="${v === "month"}">Месяц</button>
     <button type="button" data-act="trView" data-v="charts" aria-pressed="${v === "charts"}">Графики</button>
     <button type="button" data-act="trView" data-v="setup" aria-pressed="${v === "setup"}">Строки</button></div></div>`;
-  return head + (v === "month" ? trackerMonth() : v === "charts" ? trackerCharts() : v === "setup" ? trackerSetup() : trackerDay());
+  return head + (v === "week" ? trackerWeek() : v === "month" ? trackerMonth() : v === "charts" ? trackerCharts() : v === "setup" ? trackerSetup() : trackerDay());
 };
 
 // ---------- День ----------
@@ -224,31 +225,73 @@ function aggText(days, it) {
     default: return "";
   }
 }
-function trackerMonth() {
-  const mk = U.trMonth, days = monthDays(mk), t0 = today();
-  const its = items().filter(i => days.some(d => active(i, d)));
-  const th = days.map(d => { const wd = dateOf(d).getDay(); return `<th class="${wd === 0 || wd === 6 ? "we" : ""}${d === t0 ? " today" : ""}">${parts(d)[2]}<br>${WD[wd]}</th>`; }).join("");
-  const rowFor = it => `<tr><td class="first" title="${esc(it.name)}">${esc(it.name)}</td>${days.map(d => {
-    const wd = dateOf(d).getDay(), cls = "cell" + (wd === 0 || wd === 6 ? " we" : "") + (d === t0 ? " today" : "");
-    return active(it, d) ? `<td class="${cls}" data-act="cell" data-d="${d}" data-id="${it.id}" data-t="${it.type}">${cellText(d, it)}</td>` : `<td class="${cls}"></td>`;
-  }).join("")}<td class="agg">${aggText(days, it)}</td></tr>`;
-  const durOf = (list, d) => list.filter(i => i.type === "duration" && active(i, d)).reduce((a, i) => a + durVal(d, i), 0);
+const secColors = () => { const o = {}; sections().forEach((s, i) => o[s.id] = SEC_COLORS[i % SEC_COLORS.length]); return o; };
+const plain = h => String(h).replace(/<[^>]+>/g, "");
+const toggleSec = id => `<button type="button" class="secbtn" data-act="secFold" data-id="${id}" aria-expanded="${!(U.fold || {})[id]}"><span class="chev">${(U.fold || {})[id] ? "▸" : "▾"}</span>`;
+
+// ---------- Неделя: крупные клетки для отметок ----------
+function trackerWeek() {
+  const w0 = U.trWeek || weekStart(today()), days = Array.from({length: 7}, (_, i) => shift(w0, i)), t0 = today(), col = secColors();
+  const its = items().filter(i => days.some(d => active(i, d)) && !isHidden(i) || days.some(d => active(i, d) && val(d, i.id)));
+  const cell = (it, d) => {
+    const cls = "wc" + (d === t0 ? " today" : "") + (d > t0 ? " future" : "");
+    if (!active(it, d)) return `<td class="${cls} off"></td>`;
+    if (it.type === "check") { const on = isOn(d, it.id); return `<td class="${cls}"><button type="button" class="wchk${on ? " on" : ""}" data-act="cell" data-d="${d}" data-id="${it.id}" data-t="check" aria-pressed="${on}" aria-label="${esc(it.name)}, ${human(d)}">${on ? "✓" : ""}</button></td>`; }
+    const t = cellText(d, it);
+    return `<td class="${cls}"><button type="button" class="wval" data-act="openDay" data-d="${d}" aria-label="${esc(it.name)}, ${human(d)}: открыть день">${t || `<span class="ph">+</span>`}</button></td>`;
+  };
+  const range = short(days[0]) + " – " + short(days[6]);
   let body = "";
   for (const s of sections()) {
     const list = its.filter(i => i.sectionId === s.id); if (!list.length) continue;
-    body += `<tr class="sh"><td class="first">${esc(s.name)}</td><td colspan="${days.length + 1}"></td></tr>` + list.map(rowFor).join("");
-    if (s.total) {
-      const tot = days.reduce((a, d) => a + durOf(list, d), 0);
-      body += `<tr class="tot"><td class="first">Всего ${esc(s.name)}</td>${days.map(d => `<td class="num">${durOf(list, d) ? fmtMin(durOf(list, d)) : ""}</td>`).join("")}<td class="agg">${tot ? fmtMin(tot) : ""}</td></tr>`;
-    }
+    const folded = (U.fold || {})[s.id];
+    body += `<tr class="sh" style="--c:${col[s.id]}"><td class="first">${toggleSec(s.id)}${esc(s.name)}</button></td><td colspan="8"></td></tr>`;
+    if (!folded) body += list.map(it => `<tr style="--c:${col[s.id]}"><td class="first" title="${esc(it.name)}">${esc(it.name)}</td>${days.map(d => cell(it, d)).join("")}<td class="agg">${aggText(days, it)}</td></tr>`).join("");
+  }
+  const th = days.map(d => { const wd = dateOf(d).getDay(); return `<th class="${wd === 0 || wd === 6 ? "we" : ""}${d === t0 ? " today" : ""}"><span class="wd">${WD[wd]}</span><span class="dn">${parts(d)[2]}</span></th>`; }).join("");
+  return `<div class="bar">${dnav("trWeek", range)}${w0 !== weekStart(t0) ? `<button type="button" class="btn btn-sm" data-act="trWeekNow">Эта неделя</button>` : ""}<span class="muted small">Галочка — нажатием, остальное открывает день.</span></div>
+    <div class="tbl-wrap"><table class="m wk"><thead><tr><th class="first"></th>${th}<th>Неделя</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+// ---------- Месяц: тепловая сетка для обзора ----------
+function heatLevel(d, it, mx) {
+  const v = val(d, it.id);
+  switch (it.type) {
+    case "check": return v === "TRUE" ? 1 : 0;
+    case "duration": { const m = durVal(d, it); return m > 0 ? .25 + .75 * m / (mx || m) : 0; }
+    case "number": case "choice": { const n = toNum(v); return n == null ? 0 : n > 0 ? .25 + .75 * n / (mx || n) : .12; }
+    case "product": { const n = prodList(v).length; return n ? .35 + .65 * n / (mx || n) : 0; }
+    case "computed": { const m = sleepMin(d); return m == null ? 0 : Math.min(1, .2 + .8 * m / 540); }
+    default: return v ? .7 : 0;
+  }
+}
+function rowMax(days, it) {
+  const f = it.type === "duration" ? d => durVal(d, it) : it.type === "product" ? d => prodList(val(d, it.id)).length : (it.type === "number" || it.type === "choice") ? d => toNum(val(d, it.id)) || 0 : null;
+  return f ? Math.max(0, ...days.filter(d => active(it, d)).map(f)) : 0;
+}
+function trackerMonth() {
+  const mk = U.trMonth, days = monthDays(mk), t0 = today(), col = secColors();
+  const its = items().filter(i => days.some(d => active(i, d)) && !isHidden(i) || days.some(d => active(i, d) && val(d, i.id)));
+  const th = days.map(d => { const wd = dateOf(d).getDay(); return `<th class="${wd === 0 || wd === 6 ? "we" : ""}${d === t0 ? " today" : ""}" title="${human(d)}">${parts(d)[2]}</th>`; }).join("");
+  const row = it => { const mx = rowMax(days, it);
+    return `<tr><td class="first" title="${esc(it.name)}">${esc(it.name)}</td>${days.map(d => {
+      const wd = dateOf(d).getDay(), cls = "mhc" + (wd === 0 || wd === 6 ? " we" : "") + (d === t0 ? " today" : "");
+      if (!active(it, d)) return `<td class="${cls}"><i class="sq off"></i></td>`;
+      const lv = heatLevel(d, it, mx), txt = plain(cellText(d, it));
+      return `<td class="${cls}"><button type="button" class="sq${lv ? " on" : ""}" style="${lv ? `--a:${Math.round(lv * 100)}%` : ""}" data-act="openDay" data-d="${d}" data-tip="${human(d)}${txt ? ": " + txt : ""}" aria-label="${esc(it.name)}, ${human(d)}${txt ? ": " + txt : ""}"></button></td>`;
+    }).join("")}<td class="agg">${aggText(days, it)}</td></tr>`; };
+  let body = "";
+  for (const s of sections()) {
+    const list = its.filter(i => i.sectionId === s.id); if (!list.length) continue;
+    body += `<tbody style="--c:${col[s.id]}"><tr class="sh"><td class="first">${toggleSec(s.id)}${esc(s.name)}</button></td><td colspan="${days.length + 1}"></td></tr>${(U.fold || {})[s.id] ? "" : list.map(row).join("")}</tbody>`;
   }
   const orphans = its.filter(i => !get("sections", i.sectionId));
-  if (orphans.length) body += `<tr class="sh"><td class="first">Без раздела</td><td colspan="${days.length + 1}"></td></tr>` + orphans.map(rowFor).join("");
-  const allT = days.reduce((a, d) => a + durOf(its, d), 0);
-  body += `<tr class="sh"><td class="first">Итого</td><td colspan="${days.length + 1}"></td></tr>
-    <tr class="tot"><td class="first">Всего времени</td>${days.map(d => `<td class="num">${durOf(its, d) ? fmtMin(durOf(its, d)) : ""}</td>`).join("")}<td class="agg">${allT ? fmtMin(allT) : ""}</td></tr>`;
-  return `<div class="bar">${dnav("trMonth", monthName(mk))}<span class="muted small">Галочки ставятся нажатием на клетку, остальное открывает день. <span class="av">Синим</span> — время из таймеров, формат ч:мм.</span></div>
-    <div class="tbl-wrap"><table class="m"><thead><tr><th class="first">${monthName(mk)}</th>${th}<th>Итог</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  if (orphans.length) body += `<tbody style="--c:#888"><tr class="sh"><td class="first">Без раздела</td><td colspan="${days.length + 1}"></td></tr>${orphans.map(row).join("")}</tbody>`;
+  const durOf = d => its.filter(i => i.type === "duration" && active(i, d)).reduce((a, i) => a + durVal(d, i), 0);
+  const tots = days.map(durOf), mxT = Math.max(1, ...tots), allT = tots.reduce((a, b) => a + b, 0);
+  body += `<tbody style="--c:var(--accent)"><tr class="sh"><td class="first">Всего времени</td><td colspan="${days.length + 1}"></td></tr><tr><td class="first">Часы за день</td>${days.map((d, i) => `<td class="mhc"><button type="button" class="sq${tots[i] ? " on" : ""}" style="${tots[i] ? `--a:${Math.round((.25 + .75 * tots[i] / mxT) * 100)}%` : ""}" data-act="openDay" data-d="${d}" data-tip="${human(d)}: ${fmtMin(tots[i])}"></button></td>`).join("")}<td class="agg">${allT ? fmtMin(allT) : ""}</td></tr></tbody>`;
+  return `<div class="bar">${dnav("trMonth", monthName(mk))}<span class="muted small">Чем ярче клетка — тем больше значение. Наведите, чтобы увидеть, нажмите — откроется день.</span></div>
+    <div class="tbl-wrap hm-wrap"><table class="m mheat"><colgroup><col class="c1">${days.map(() => "<col>").join("")}<col class="c2"></colgroup><thead><tr><th class="first">${monthName(mk)}</th>${th}<th>Итог</th></tr></thead>${body}</table></div>`;
 }
 
 // ---------- Графики (дашборд по типам) ----------
@@ -385,6 +428,10 @@ Object.assign(ACT, {
   trView: el => { U.trView = el.dataset.v; saveUI(); render(); },
   trDay: el => { U.trDate = shift(U.trDate, +el.dataset.n); saveUI(); render(); },
   trToday: () => { U.trDate = today(); saveUI(); render(); },
+  trWeek: el => { U.trWeek = shift(U.trWeek || weekStart(today()), 7 * +el.dataset.n); saveUI(); render(); },
+  trWeekNow: () => { U.trWeek = weekStart(today()); saveUI(); render(); },
+  openDay: el => { U.trDate = el.dataset.d; U.trView = "day"; saveUI(); render(); window.scrollTo(0, 0); },
+  secFold: el => { U.fold = U.fold || {}; U.fold[el.dataset.id] = !U.fold[el.dataset.id]; saveUI(); render(); },
   trMonth: el => { U.trMonth = shiftMonth(U.trMonth, +el.dataset.n); saveUI(); render(); },
   cell: el => {
     const {d, id, t} = el.dataset;

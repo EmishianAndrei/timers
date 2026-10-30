@@ -112,7 +112,7 @@ function load() {
   try { Object.assign(U, JSON.parse(localStorage.getItem(UIKEY) || "{}")); } catch (e) {}
   for (const c in SCHEMA) S.cols[c] = S.cols[c] || {};
   // при каждом открытии — сегодняшний день и текущий месяц
-  U.trDate = today(); U.tmDate = today(); U.trMonth = U.finMonth = U.goalMonth = mkey(today());
+  U.trDate = today(); U.tmDate = today(); U.trWeek = weekStart(today()); U.editPanel = null; U.trMonth = U.finMonth = U.goalMonth = mkey(today());
   U.menu = null; U.modal = null; U.adding = null; U.openTask = null;
 }
 let saveT = null;

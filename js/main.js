@@ -27,6 +27,7 @@ function tick() {
   if (tick.day && tick.day !== today()) { // наступила полночь: переходим на новый день, если смотрели «сегодня»
     const prev = tick.day; tick.day = today(); U.tmDate = today();
     if (U.trDate === prev) U.trDate = today();
+    if (U.trWeek === weekStart(prev)) U.trWeek = weekStart(today());
     if (U.trMonth === mkey(prev)) U.trMonth = mkey(today());
     saveUI(); softRender(); return;
   }

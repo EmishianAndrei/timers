@@ -386,6 +386,47 @@ button.gt-chip:hover{background:var(--surface-2)}
 .item:has(.meal){flex-wrap:wrap;gap:6px 12px}
 .item:has(.meal) .lbl{flex:1 1 160px}
 .item:has(.meal) .ctl{flex:1 1 auto;justify-content:flex-end}
+/* Трекер: неделя */
+table.wk{font-size:14px;table-layout:fixed;width:100%;min-width:620px}
+table.wk th.first,table.wk td.first{width:200px;max-width:200px}
+table.wk thead th{padding:8px 4px}
+table.wk thead th .wd{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+table.wk thead th .dn{display:block;font-size:17px;font-weight:600;color:var(--fg);font-family:var(--f-num)}
+table.wk thead th.today .dn{color:var(--accent)}
+table.wk thead th:last-child{width:72px}
+table.wk td.wc{padding:3px}
+table.wk td.wc.today{background:var(--accent-soft)}
+table.wk td.first{padding:6px 10px}
+.wchk{width:34px;height:34px;border-radius:10px;border:1.5px solid var(--line-2,var(--line));display:inline-grid;place-items:center;font-size:17px;color:#fff;font-weight:700;transition:background .12s,border-color .12s}
+.wchk:hover{border-color:var(--c,var(--accent))}
+.wchk.on{background:var(--c,var(--accent));border-color:var(--c,var(--accent))}
+.future .wchk{opacity:.45}
+.wval{width:100%;min-height:34px;border-radius:8px;font-family:var(--f-num);font-size:13px;padding:2px}
+.wval:hover{background:var(--surface-2)}
+.wval .ph{color:var(--muted);opacity:0;font-size:16px}
+.wval:hover .ph,.wval:focus-visible .ph{opacity:1}
+.secbtn{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--fg)}
+.secbtn .chev{width:12px;color:var(--muted);font-size:11px}
+table.m tr.sh td.first{box-shadow:inset 3px 0 var(--c,transparent)}
+/* Трекер: месяц — тепловая сетка */
+table.mheat{table-layout:fixed;width:100%;min-width:640px}
+table.mheat col.c1{width:190px}
+table.mheat col.c2{width:64px}
+table.mheat th{padding:6px 0;font-size:11px}
+table.mheat td.mhc{padding:2px 1px;border-bottom:0}
+table.mheat td.first{padding:3px 8px;font-size:12.5px;border-bottom:0}
+table.mheat tr.sh td{padding-top:8px;border-bottom:0}
+table.mheat td.agg{font-size:12px;border-bottom:0}
+.sq{display:block;width:100%;max-width:22px;aspect-ratio:1;margin:auto;border-radius:4px;background:var(--surface-2);border:0;padding:0}
+.sq.off{background:transparent}
+.sq.on{background:color-mix(in srgb,var(--c,var(--accent)) var(--a,100%),var(--surface-2))}
+button.sq{cursor:pointer}
+button.sq:hover{outline:2px solid var(--fg);outline-offset:1px}
+table.mheat td.today .sq:not(.on){box-shadow:inset 0 0 0 1.5px var(--accent)}
+table.mheat td.we{background:transparent}
+table.mheat thead th.we{background:var(--surface-2)}
+table.mheat thead th.today{color:var(--accent);font-weight:700}
+@media (max-width:700px){table.wk th.first,table.wk td.first{width:120px;max-width:120px}table.mheat col.c1{width:120px}}
 /* режим «Настроить» на панелях */
 .editbtn{text-decoration:none;font-weight:600}
 .editbtn[aria-pressed=true]{color:var(--fg)}
@@ -488,14 +529,14 @@ button.gt-chip:hover{background:var(--surface-2)}
   <button type="button" class="pop-i" data-act="tab" data-tab="settings"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="pop-t">Настройки</span></button>
 </div></div>
 <div class="toast" id="toast" hidden></div>
-<script src="js/core.js?v=202610301600"></script>
-<script src="js/timers.js?v=202610301600"></script>
-<script src="js/tracker.js?v=202610301600"></script>
-<script src="js/recipes.js?v=202610301600"></script>
-<script src="js/tasks.js?v=202610301600"></script>
-<script src="js/money.js?v=202610301600"></script>
-<script src="js/insights.js?v=202610301600"></script>
-<script src="js/today.js?v=202610301600"></script>
-<script src="js/main.js?v=202610301600"></script>
+<script src="js/core.js?v=202610301800"></script>
+<script src="js/timers.js?v=202610301800"></script>
+<script src="js/tracker.js?v=202610301800"></script>
+<script src="js/recipes.js?v=202610301800"></script>
+<script src="js/tasks.js?v=202610301800"></script>
+<script src="js/money.js?v=202610301800"></script>
+<script src="js/insights.js?v=202610301800"></script>
+<script src="js/today.js?v=202610301800"></script>
+<script src="js/main.js?v=202610301800"></script>
 </body>
 </html>
