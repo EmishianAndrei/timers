@@ -1,0 +1,39 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "io.github.emishianandrei.timers"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "io.github.emishianandrei.timers"
+        minSdk 24
+        targetSdk 34
+        // номер сборки GitHub — чтобы новая версия ставилась поверх старой
+        versionCode((System.getenv("VERSION_CODE") ?: "1").toInteger())
+        versionName "1." + (System.getenv("VERSION_CODE") ?: "0")
+    }
+
+    signingConfigs {
+        release {
+            storeFile file("release.jks")
+            storeType "pkcs12"
+            storePassword System.getenv("KS_PASS")
+            keyAlias "timers"
+            keyPassword System.getenv("KS_PASS")
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

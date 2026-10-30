@@ -1,0 +1,65 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    paths: ["android/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Есть ли пароль ключа подписи
+        id: key
+        env:
+          KS_PASS: ${{ secrets.ANDROID_KS_PASS }}
+        run: |
+          if [ -n "$KS_PASS" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning::Секрет ANDROID_KS_PASS не задан — собираю только тестовую (debug) версию, без выпуска"; echo "ok=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Тестовая сборка (без пароля)
+        if: steps.key.outputs.ok != 'true'
+        working-directory: android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        if: steps.key.outputs.ok != 'true'
+        with:
+          name: tracker-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Сборка и подпись
+        if: steps.key.outputs.ok == 'true'
+        working-directory: android
+        env:
+          KS_PASS: ${{ secrets.ANDROID_KS_PASS }}
+          VERSION_CODE: ${{ github.run_number }}
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Выпуск в Releases
+        if: steps.key.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.run_number }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk tracker.apk
+          gh release create "app-$RUN" tracker.apk --latest \
+            --title "Трекер для Android — версия 1.$RUN" \
+            --notes "Скачайте tracker.apk на телефон и откройте. Новая версия ставится поверх старой, данные сохраняются."
