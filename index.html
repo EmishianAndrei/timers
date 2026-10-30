@@ -386,6 +386,15 @@ button.gt-chip:hover{background:var(--surface-2)}
 .item:has(.meal){flex-wrap:wrap;gap:6px 12px}
 .item:has(.meal) .lbl{flex:1 1 160px}
 .item:has(.meal) .ctl{flex:1 1 auto;justify-content:flex-end}
+/* режим «Настроить» на панелях */
+.editbtn{text-decoration:none;font-weight:600}
+.editbtn[aria-pressed=true]{color:var(--fg)}
+.erow .lbl{display:flex;flex-direction:column;gap:2px}
+.erow .ename{width:100%;min-width:0;padding:5px 8px}
+.erow .ctl{gap:2px}
+.hid-h{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+.addrow{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.sec-h .row,.bar>.row{gap:10px;align-items:center}
 .streaks{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
 .streak{text-align:left;border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;background:var(--surface)}
 .streak:hover{border-color:var(--muted)}
@@ -479,14 +488,14 @@ button.gt-chip:hover{background:var(--surface-2)}
   <button type="button" class="pop-i" data-act="tab" data-tab="settings"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="pop-t">Настройки</span></button>
 </div></div>
 <div class="toast" id="toast" hidden></div>
-<script src="js/core.js?v=202610301130"></script>
-<script src="js/timers.js?v=202610301130"></script>
-<script src="js/tracker.js?v=202610301130"></script>
-<script src="js/recipes.js?v=202610301130"></script>
-<script src="js/tasks.js?v=202610301130"></script>
-<script src="js/money.js?v=202610301130"></script>
-<script src="js/insights.js?v=202610301130"></script>
-<script src="js/today.js?v=202610301130"></script>
-<script src="js/main.js?v=202610301130"></script>
+<script src="js/core.js?v=202610301500"></script>
+<script src="js/timers.js?v=202610301500"></script>
+<script src="js/tracker.js?v=202610301500"></script>
+<script src="js/recipes.js?v=202610301500"></script>
+<script src="js/tasks.js?v=202610301500"></script>
+<script src="js/money.js?v=202610301500"></script>
+<script src="js/insights.js?v=202610301500"></script>
+<script src="js/today.js?v=202610301500"></script>
+<script src="js/main.js?v=202610301500"></script>
 </body>
 </html>

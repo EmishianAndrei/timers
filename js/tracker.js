@@ -144,16 +144,52 @@ function nutrSummary(k) {
     <div class="macros">${[["prot", "Белки"], ["fat", "Жиры"], ["carb", "Углеводы"]].map(([x, l]) => `<span><b class="num">${fnum(tot[x], 0)}</b> г <i>${l}</i></span>`).join("")}</div>
     ${missing ? `<p class="muted small">У ${missing} записей нет КБЖУ. Впишите их в карточке рецепта или продукта.</p>` : ""}`;
 }
+// ---------- Правка строк прямо на панели («Настроить») ----------
+const TYPE_SHORT = {check: "галочка", duration: "длительность ч:мм", meal: "приём пищи", product: "продукт из списка", number: "число", choice: "выбор из списка", time: "время суток", text: "текст", computed: "сон (авто)"};
+/** скрытая строка: у неё стоит дата окончания в прошлом. Записи при этом не удаляются */
+const isHidden = i => !!i.to && i.to < today();
+const editOn = key => U.editPanel === key;
+const editBtn = key => `<button type="button" class="linkbtn editbtn" data-act="editPanel" data-key="${key}" aria-pressed="${editOn(key)}">${editOn(key) ? "Готово" : "Настроить"}</button>`;
+/** строки в режиме правки: название, ↑ ↓, «Скрыть» */
+function editRows(list) {
+  return list.map((i, n) => `<div class="item erow"><span class="lbl"><input type="text" class="ename" data-chg="item" data-id="${i.id}" data-f="name" value="${esc(i.name)}" aria-label="Название строки"><span class="small muted">${TYPE_SHORT[i.type] || ""}</span></span>
+    <span class="ctl"><button type="button" class="icon" data-act="itemSwap" data-id="${i.id}" data-other="${list[n - 1]?.id || ""}" ${n ? "" : "disabled"} aria-label="Выше">↑</button><button type="button" class="icon" data-act="itemSwap" data-id="${i.id}" data-other="${list[n + 1]?.id || ""}" ${n < list.length - 1 ? "" : "disabled"} aria-label="Ниже">↓</button><button type="button" class="btn btn-sm" data-act="endItem" data-id="${i.id}" data-tip="Строка пропадёт с экрана, все записи сохранятся">Скрыть</button></span></div>`).join("");
+}
+function hiddenRows(list) {
+  if (!list.length) return "";
+  return `<div class="label hid-h">Скрытые — записи сохранены</div>${list.map(i => `<div class="item"><span class="lbl muted">${esc(i.name)} <span class="small">· ${TYPE_SHORT[i.type] || ""}</span></span><span class="ctl"><button type="button" class="btn btn-sm" data-act="reviveItem" data-id="${i.id}">Вернуть</button></span></div>`).join("")}`;
+}
+/** форма «новая строка»: types — какие форматы предлагать, sec — раздел по умолчанию, pickSec — дать выбрать раздел */
+function addRowForm(types, sec, pickSec) {
+  const t0 = types[0], opts = t => t === "choice" ? "Варианты через |, например 0|1|2|3" : t === "product" ? "Категория продуктов, например энергетик" : t === "meal" ? "Показывать: еда или напиток" : "";
+  return `<form class="form addrow" data-form="addItem" data-sec="${esc(sec)}" autocomplete="off">
+    <input type="text" name="name" placeholder="Новая строка" required aria-label="Название новой строки" style="flex:1 1 160px">
+    ${types.length > 1 ? `<select name="type" data-chg="addType" aria-label="Формат">${types.map(t => opt(t, TYPE_SHORT[t], t === t0)).join("")}</select>` : `<input type="hidden" name="type" value="${t0}">`}
+    ${pickSec ? `<select name="sec" aria-label="Раздел">${sections().map(s => opt(s.id, s.name, s.id === sec)).join("")}</select>` : ""}
+    <input type="text" name="options" placeholder="${esc(opts(t0))}" aria-label="Настройка формата" style="flex:1 1 200px" ${opts(t0) ? "" : "hidden"}>
+    <button class="btn btn-primary" type="submit">Добавить</button></form>`;
+}
+/** меняет местами две строки в общем порядке (порядок общий для всех экранов) */
+function itemSwap(a, b) {
+  const arr = items(), i = arr.findIndex(x => x.id === a), j = arr.findIndex(x => x.id === b);
+  if (i < 0 || j < 0) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  batch(() => arr.forEach((x, n) => { if (x.order !== n) patch("items", x.id, {order: n}); }));
+}
+
 function trackerDay() {
   const k = U.trDate, t0 = today(), its = items().filter(i => active(i, k));
   let durTotal = 0;
-  const secHtml = (name, list, total) => `<section class="panel sec"><div class="sec-h"><h3>${esc(name)}</h3>${total != null ? `<span class="num">${fmtMin(total)}</span>` : ""}</div>
-      ${list.map(i => `<div class="item"><span class="lbl">${itemLabel(k, i)}</span><span class="ctl">${control(k, i)}</span></div>`).join("")}</section>`;
+  const ALL_T = Object.keys(ITEM_TYPES).filter(t => t !== "computed");
+  const secHtml = (name, list, total, sid) => { const key = "sec:" + (sid || ""), ed = sid && editOn(key);
+    return `<section class="panel sec"><div class="sec-h"><h3>${esc(name)}</h3><span class="row">${total != null && !ed ? `<span class="num">${fmtMin(total)}</span>` : ""}${sid ? editBtn(key) : ""}</span></div>
+      ${ed ? editRows(list) + hiddenRows(items().filter(i => i.sectionId === sid && isHidden(i))) + addRowForm(ALL_T, sid, false)
+        : list.map(i => `<div class="item"><span class="lbl">${itemLabel(k, i)}</span><span class="ctl">${control(k, i)}</span></div>`).join("")}</section>`; };
   const secs = sections().map(s => {
-    const list = its.filter(i => i.sectionId === s.id); if (!list.length) return "";
+    const list = its.filter(i => i.sectionId === s.id); if (!list.length && !editOn("sec:" + s.id)) return "";
     const tot = list.filter(i => i.type === "duration").reduce((a, i) => a + durVal(k, i), 0);
     durTotal += tot;
-    return secHtml(s.name, list, s.total ? tot : null);
+    return secHtml(s.name, list, s.total ? tot : null, s.id);
   }).join("");
   const orphan = its.filter(i => !get("sections", i.sectionId));
   return `<div class="bar">${dnav("trDay", k === t0 ? "Сегодня, " + short(k) : human(k))}${k !== t0 ? `<button type="button" class="btn btn-sm" data-act="trToday">Сегодня</button>` : ""}</div>
@@ -357,7 +393,9 @@ Object.assign(ACT, {
   },
   dur: el => { const {d, id} = el.dataset, it = get("items", id); const v = Math.max(0, durVal(d, it) + +el.dataset.n); setVal(d, id, v ? String(v) : (autoMin(d, id) ? "0" : "")); },
   resetAuto: el => setVal(el.dataset.d, el.dataset.id, ""),
-  moveItem: el => { const it = get("items", el.dataset.id); moveIn("items", items().filter(i => i.sectionId === it.sectionId), it.id, +el.dataset.n); },
+  moveItem: el => { const it = get("items", el.dataset.id), list = items().filter(i => i.sectionId === it.sectionId), n = list.findIndex(i => i.id === it.id), o = list[n + +el.dataset.n]; if (o) itemSwap(it.id, o.id); },
+  itemSwap: el => { if (el.dataset.other) itemSwap(el.dataset.id, el.dataset.other); },
+  editPanel: el => { U.editPanel = U.editPanel === el.dataset.key ? null : el.dataset.key; render(); },
   moveSection: el => moveIn("sections", sections(), el.dataset.id, +el.dataset.n),
   endItem: el => patch("items", el.dataset.id, {to: shift(today(), -1)}),
   reviveItem: el => patch("items", el.dataset.id, {to: ""}),
@@ -394,10 +432,18 @@ Object.assign(CHG, {
     if (amt !== "") { const n = toNum(amt); amt = n == null || n <= 0 ? "" : String(n); }
     setVal(el.dataset.d, el.dataset.id, num || time ? num + "|" + time + (amt ? "|" + amt : "") : "");
   },
-  item: el => patch("items", el.dataset.id, {[el.dataset.f]: el.value.trim()}),
+  item: el => { const v = el.value.trim(); if (el.dataset.f === "name" && !v) { render(); return; } patch("items", el.dataset.id, {[el.dataset.f]: v}); },
+  addType: el => { const f = el.form, o = f.elements.namedItem("options"), t = el.value;
+    const ph = t === "choice" ? "Варианты через |, например 0|1|2|3" : t === "product" ? "Категория продуктов, например энергетик" : t === "meal" ? "Показывать: еда или напиток" : "";
+    o.placeholder = ph; o.hidden = !ph; },
   section: el => patch("sections", el.dataset.id, {[el.dataset.f]: el.type === "checkbox" ? el.checked : el.value.trim()}),
 });
 Object.assign(FORM, {
-  addItem: f => { const name = fv(f, "name").trim(); if (!name) return; const type = fv(f, "type"); put("items", {id: uid(), sectionId: f.dataset.sec, name, type, options: type === "choice" ? "0|1|2|3" : "", role: "", order: nextOrder(all("items")), from: today(), to: ""}); },
+  addItem: f => {
+    const name = fv(f, "name").trim(); if (!name) return; const type = fv(f, "type");
+    let options = ["choice", "product", "meal"].includes(type) ? fv(f, "options").trim() : "";
+    if (type === "choice" && !options) options = "0|1|2|3";
+    put("items", {id: uid(), sectionId: fv(f, "sec") || f.dataset.sec, name, type, options, role: "", order: nextOrder(all("items")), from: today(), to: ""});
+  },
   addSection: f => { const name = fv(f, "name").trim(); if (name) put("sections", {id: uid(), name, order: nextOrder(all("sections")), total: false}); },
 });

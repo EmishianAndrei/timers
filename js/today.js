@@ -46,18 +46,23 @@ VIEWS.today = () => {
 
   // привычки по разделам
   const secs = sections();
-  const habitsHtml = checks.length ? secs.map(s => {
+  const firstSec = (list, def) => list.find(i => get("sections", i.sectionId))?.sectionId || def || secs[0]?.id || "";
+  const habitsHtml = editOn("t:habits") ? secs.map(s => { const l = checks.filter(i => i.sectionId === s.id); return l.length ? `<div class="hgroup"><div class="label">${esc(s.name)}</div>${editRows(l)}</div>` : ""; }).join("") + hiddenRows(items().filter(i => i.type === "check" && isHidden(i))) + addRowForm(["check"], firstSec(checks), true)
+    : checks.length ? secs.map(s => {
     const list = checks.filter(i => i.sectionId === s.id); if (!list.length) return "";
     return `<div class="hgroup"><div class="label">${esc(s.name)}</div>${list.map(i => { const on = isOn(k, i.id), st = streakOf(i.id);
       return `<label class="hcheck${on ? " on" : ""}"><input type="checkbox" data-chg="entry" data-d="${k}" data-id="${i.id}" ${on ? "checked" : ""}><span class="hc-t">${esc(i.name)}</span>${st > 1 ? `<span class="st" data-tip="Серия: ${st} дн. подряд">🔥 ${st}</span>` : ""}</label>`; }).join("")}</div>`;
   }).join("") : `<p class="empty">Галочек пока нет.</p>`;
 
   // сон, еда и прочие поля за день (кроме галочек и времени занятий)
-  const other = items().filter(i => active(i, k) && !["check", "duration", "computed"].includes(i.type));
-  const sleepIts = other.filter(i => i.role === "bed" || i.role === "wake");
-  const foodIts = other.filter(i => i.type === "meal" || i.type === "product");
-  const restIts = other.filter(i => !sleepIts.includes(i) && !foodIts.includes(i));
+  const FOOD = ["meal", "product"], REST = ["time", "computed", "number", "choice", "text"];
+  const its = items().filter(i => active(i, k));
+  const foodIts = its.filter(i => FOOD.includes(i.type));
+  const restIts = its.filter(i => REST.includes(i.type)); // идут в общем порядке строк, его можно менять
   const fieldRows = list => list.map(i => `<div class="item"><span class="lbl">${itemLabel(k, i)}</span><span class="ctl">${control(k, i)}</span></div>`).join("");
+  const panelBody = (key, list, types, addTypes) => editOn(key)
+    ? editRows(list) + hiddenRows(items().filter(i => types.includes(i.type) && isHidden(i))) + addRowForm(addTypes, firstSec(list), true)
+    : fieldRows(list);
 
   const cats = topExpenseCats(), cur = get("finCats", U.finCat) && cats.some(c => c.id === U.finCat) ? U.finCat : cats[0]?.id;
   const moneyHtml = cats.length ? `<div class="chips">${cats.map(c => `<button type="button" class="chipbtn${c.id === cur ? " on" : ""}" data-act="todayCat" data-id="${c.id}">${esc(c.name)}</button>`).join("")}</div>
@@ -77,10 +82,10 @@ VIEWS.today = () => {
   ${tiles}
   <div class="dash">
     <section class="panel"><div class="bar"><h3>Таймеры</h3><button type="button" class="linkbtn" data-act="tab" data-tab="timers">Все таймеры →</button></div>${timersHtml}</section>
-    <section class="panel"><div class="bar"><h3>Привычки</h3><span class="muted small">${doneN} из ${checks.length}</span></div>${habitsHtml}</section>
-    ${foodIts.length ? `<section class="panel sec"><div class="bar"><h3>Еда</h3><button type="button" class="linkbtn" data-act="tab" data-tab="recipes">Рецепты →</button></div>${fieldRows(foodIts)}${nutrSummary(k)}</section>` : ""}
+    <section class="panel"><div class="bar"><h3>Привычки</h3><span class="row"><span class="muted small">${doneN} из ${checks.length}</span>${editBtn("t:habits")}</span></div>${habitsHtml}</section>
+    <section class="panel sec"><div class="bar"><h3>Еда</h3><span class="row">${editOn("t:food") ? "" : `<button type="button" class="linkbtn" data-act="tab" data-tab="recipes">Рецепты →</button>`}${editBtn("t:food")}</span></div>${panelBody("t:food", foodIts, FOOD, FOOD)}${editOn("t:food") ? "" : nutrSummary(k)}</section>
     <section class="panel"><div class="bar"><h3>Задачи</h3><button type="button" class="linkbtn" data-act="tab" data-tab="tasks">Все задачи →</button></div><div class="today-tasks">${tasksHtml}</div></section>
-    ${sleepIts.length || restIts.length ? `<section class="panel sec"><h3>Сон и самочувствие</h3>${fieldRows(sleepIts)}${sleepIts.length ? `<div class="item"><span class="lbl">Длительность сна</span><span class="ctl num">${slp == null ? "—" : min2hm(slp)}</span></div>` : ""}${fieldRows(restIts)}</section>` : ""}
+    <section class="panel sec"><div class="bar"><h3>Сон и самочувствие</h3>${editBtn("t:rest")}</div>${panelBody("t:rest", restIts, REST, ["time", "number", "choice", "text"])}${!restIts.length && !editOn("t:rest") ? `<p class="empty">Строк нет — нажмите «Настроить», чтобы добавить.</p>` : ""}</section>
     <section class="panel"><h3>Быстрая трата</h3>${moneyHtml}</section>
   </div>`;
 };
