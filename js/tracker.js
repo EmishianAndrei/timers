@@ -42,20 +42,24 @@ function nutrOf(r, amt) {
   for (const k of NUTRK) { const v = toNum(r[k]); o[k] = v == null ? 0 : v * f; if (v != null) any = true; }
   return any ? o : null;
 }
+/** строка «Продукт из списка» может хранить несколько продуктов через запятую: «П1,П1,П3» */
+const prodList = v => String(v || "").split(",").map(x => x.trim()).filter(Boolean);
 /** КБЖУ за день: все приёмы пищи + строки «Продукт из списка» (вся упаковка) */
 function dayNutr(k) {
   const tot = {kcal: 0, prot: 0, fat: 0, carb: 0}, list = []; let missing = 0;
   for (const it of items()) {
     if (!active(it, k)) continue;
     const v = val(k, it.id); if (!v) continue;
-    let r = null, amt = null;
-    if (it.type === "meal") { const p = mealParts(v); r = recipeByNum(p.num); amt = p.amt; if (!p.num) continue; }
-    else if (it.type === "product") r = recipeByNum(v);
+    const pairs = [];
+    if (it.type === "meal") { const p = mealParts(v); if (!p.num) continue; pairs.push([recipeByNum(p.num), p.amt]); }
+    else if (it.type === "product") prodList(v).forEach(c => pairs.push([recipeByNum(c), null]));
     else continue;
-    const n = nutrOf(r, amt);
-    if (!n) { missing++; continue; }
-    NUTRK.forEach(x => tot[x] += n[x]);
-    list.push({it, r, n, amt: amt || defAmt(r)});
+    for (const [r, amt] of pairs) {
+      const n = nutrOf(r, amt);
+      if (!n) { missing++; continue; }
+      NUTRK.forEach(x => tot[x] += n[x]);
+      list.push({it, r, n, amt: amt || defAmt(r)});
+    }
   }
   return {tot, list, missing};
 }
@@ -116,8 +120,11 @@ function control(k, it) {
     }
     case "number": return `<input type="number" inputmode="decimal" step="any" ${a} value="${esc(v)}" aria-label="${esc(it.name)}">`;
     case "product": {
-      const list = productsFor(it), cur = recipeByNum(v);
-      return `<select ${a} aria-label="${esc(it.name)}" style="max-width:15em">${opt("", "—", !v)}${list.map(r => opt(foodCode(r), "№" + r.num + " " + (r.short || r.name), cur && cur.id === r.id)).join("")}${v && !cur ? opt(v, (toNum(v) != null ? fnum(toNum(v), 3) : v) + " (старая запись)", true) : ""}</select>`;
+      const codes = prodList(v), list = productsFor(it), adding = U.addProd === k + "|" + it.id;
+      const chips = codes.map((c, i) => { const r = recipeByNum(c); return `<span class="pchip" data-tip="${esc(r ? r.name : "старая запись")}">${r ? "№" + r.num + " " + esc(r.short || r.name) : (toNum(c) != null ? fnum(toNum(c), 3) : esc(c))}<button type="button" data-act="prodDel" data-d="${k}" data-id="${it.id}" data-i="${i}" aria-label="Убрать">×</button></span>`; }).join("");
+      const picker = adding ? `<select data-chg="prodAdd" data-d="${k}" data-id="${it.id}" aria-label="Выберите" data-autofocus>${opt("", "Выберите…", true)}${list.map(r => opt(foodCode(r), "№" + r.num + " " + (r.short || r.name))).join("")}</select><button type="button" class="icon" data-act="prodAddCancel" aria-label="Отмена">×</button>`
+        : `<button type="button" class="btn btn-sm addp" data-act="prodAddOpen" data-d="${k}" data-id="${it.id}">+ ${codes.length ? "ещё" : "Добавить"}</button>`;
+      return `<span class="prods">${chips}${list.length ? picker : `<span class="muted small">нет продуктов в категории «${esc(it.options || "")}»</span>`}</span>`;
     }
     case "choice": return `<select ${a} aria-label="${esc(it.name)}">${opt("", "—", !v)}${String(it.options || "").split("|").filter(x => x !== "").map(o => opt(o, fnum(toNum(o), 3) || o, String(toNum(v)) === String(toNum(o)) && v !== "")).join("")}</select>`;
     case "time": return `<input type="time" ${a} value="${esc(v)}" aria-label="${esc(it.name)}">`;
@@ -163,7 +170,7 @@ function cellText(k, it) {
     case "duration": { const man = toNum(v); if (man != null) return man ? fmtMin(man) : ""; const a = autoMin(k, it.id); return a ? `<span class="av">${fmtMin(a)}</span>` : ""; }
     case "meal": { const {num, time, amt} = mealParts(v); if (!num && !time) return ""; const r = recipeByNum(num), n = nutrOf(r, amt); return `<span data-tip="${esc((r ? r.name : num ? num + " (нет в рецептах и продуктах)" : "без блюда") + (r ? "\n" + fnum(toNum(amt) ?? defAmt(r)) + " " + amtUnit(r) : "") + (n ? " · " + Math.round(n.kcal) + " ккал" : "") + (time ? "\n" + time : ""))}">${r ? "№" + esc(r.num) : num ? esc(num) : "•"}</span>`; }
     case "number": { const n = toNum(v); return n == null ? "" : n >= 10000 ? fnum(n / 1000, 1) + "к" : fnum(n, 2); }
-    case "product": { if (!v) return ""; const r = recipeByNum(v); return r ? `<span data-tip="${esc(r.name)}">№${esc(r.num)}</span>` : `<span data-tip="старая запись">${toNum(v) != null ? fnum(toNum(v), 3) : esc(v)}</span>`; }
+    case "product": { const cs = prodList(v); if (!cs.length) return ""; const rs = cs.map(recipeByNum); if (rs.every(r => !r)) return `<span data-tip="старая запись">${toNum(v) != null ? fnum(toNum(v), 3) : esc(v)}</span>`; return `<span data-tip="${esc(rs.map((r, i) => r ? r.name : cs[i]).join("\n"))}">${cs.length > 1 ? "×" + cs.length : "№" + esc(rs[0]?.num ?? cs[0])}</span>`; }
     case "choice": { const n = toNum(v); return n == null ? esc(v) : fnum(n, 3); }
     case "time": return esc(v);
     case "computed": { const m = sleepMin(k); return m == null ? "" : min2hm(m); }
@@ -359,7 +366,13 @@ Object.assign(ACT, {
   delItemYes: el => { U.delItem = null; del("items", el.dataset.id); },
   delSection: el => del("sections", el.dataset.id),
 });
+Object.assign(ACT, {
+  prodAddOpen: el => { U.addProd = el.dataset.d + "|" + el.dataset.id; render(); setTimeout(() => { const s = $("[data-chg=prodAdd]"); if (s) { s.focus(); try { s.showPicker(); } catch (e) {} } }, 0); },
+  prodAddCancel: () => { U.addProd = null; render(); },
+  prodDel: el => { const {d, id} = el.dataset, cs = prodList(val(d, id)); cs.splice(+el.dataset.i, 1); setVal(d, id, cs.join(",")); },
+});
 Object.assign(CHG, {
+  prodAdd: el => { if (!el.value) return; const {d, id} = el.dataset, cs = prodList(val(d, id)).filter(c => recipeByNum(c)); cs.push(el.value); U.addProd = null; setVal(d, id, cs.join(",")); },
   entry: el => {
     const it = get("items", el.dataset.id);
     let v = el.type === "checkbox" ? (el.checked ? "TRUE" : "") : el.value.trim();

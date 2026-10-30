@@ -378,6 +378,11 @@ button.gt-chip:hover{background:var(--surface-2)}
 .amt input{border:0;width:4.2em;text-align:right;padding:8px 4px 8px 8px;background:transparent}
 .amt i{font-style:normal;color:var(--muted);font-size:12.5px}
 .meal{flex-wrap:wrap;justify-content:flex-end}
+.prods{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end}
+.pchip{display:inline-flex;align-items:center;gap:4px;padding:4px 4px 4px 10px;border-radius:999px;background:var(--accent-soft);color:var(--fg);font-size:13.5px}
+.pchip button{width:22px;height:22px;border-radius:50%;color:var(--muted);display:grid;place-items:center}
+.pchip button:hover{background:var(--surface);color:var(--bad)}
+.item:has(.prods){flex-wrap:wrap;gap:6px 12px}
 .item:has(.meal){flex-wrap:wrap;gap:6px 12px}
 .item:has(.meal) .lbl{flex:1 1 160px}
 .item:has(.meal) .ctl{flex:1 1 auto;justify-content:flex-end}
@@ -474,14 +479,14 @@ button.gt-chip:hover{background:var(--surface-2)}
   <button type="button" class="pop-i" data-act="tab" data-tab="settings"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="pop-t">Настройки</span></button>
 </div></div>
 <div class="toast" id="toast" hidden></div>
-<script src="js/core.js?v=202610301125"></script>
-<script src="js/timers.js?v=202610301125"></script>
-<script src="js/tracker.js?v=202610301125"></script>
-<script src="js/recipes.js?v=202610301125"></script>
-<script src="js/tasks.js?v=202610301125"></script>
-<script src="js/money.js?v=202610301125"></script>
-<script src="js/insights.js?v=202610301125"></script>
-<script src="js/today.js?v=202610301125"></script>
-<script src="js/main.js?v=202610301125"></script>
+<script src="js/core.js?v=202610301130"></script>
+<script src="js/timers.js?v=202610301130"></script>
+<script src="js/tracker.js?v=202610301130"></script>
+<script src="js/recipes.js?v=202610301130"></script>
+<script src="js/tasks.js?v=202610301130"></script>
+<script src="js/money.js?v=202610301130"></script>
+<script src="js/insights.js?v=202610301130"></script>
+<script src="js/today.js?v=202610301130"></script>
+<script src="js/main.js?v=202610301130"></script>
 </body>
 </html>

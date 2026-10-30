@@ -55,7 +55,7 @@ VIEWS.today = () => {
   // сон, еда и прочие поля за день (кроме галочек и времени занятий)
   const other = items().filter(i => active(i, k) && !["check", "duration", "computed"].includes(i.type));
   const sleepIts = other.filter(i => i.role === "bed" || i.role === "wake");
-  const foodIts = other.filter(i => i.type === "meal");
+  const foodIts = other.filter(i => i.type === "meal" || i.type === "product");
   const restIts = other.filter(i => !sleepIts.includes(i) && !foodIts.includes(i));
   const fieldRows = list => list.map(i => `<div class="item"><span class="lbl">${itemLabel(k, i)}</span><span class="ctl">${control(k, i)}</span></div>`).join("");
 
