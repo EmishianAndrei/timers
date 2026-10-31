@@ -79,6 +79,7 @@ VIEWS.today = () => {
 
   return `<div class="bar"><div><h1 class="hello">${title}</h1><div class="muted small">${greet()}</div></div></div>
   ${scriptBanner()}
+  ${remindBanner()}
   ${tiles}
   <div class="dash">
     <section class="panel"><div class="bar"><h3>Таймеры</h3><button type="button" class="linkbtn" data-act="tab" data-tab="timers">Все таймеры →</button></div>${timersHtml}</section>

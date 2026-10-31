@@ -403,6 +403,7 @@ function trackerSetup() {
       ${i.type === "product" ? `<label class="row">Категория продуктов<input type="text" data-chg="item" data-id="${i.id}" data-f="options" value="${esc(i.options)}" placeholder="например, энергетик (пусто — все)" style="width:16em"></label>` : ""}
       ${i.type === "choice" ? `<label class="row">Варианты через |<input type="text" data-chg="item" data-id="${i.id}" data-f="options" value="${esc(i.options)}" style="width:14em"></label>` : ""}
       ${i.type === "time" ? `<label class="row">Роль<select data-chg="item" data-id="${i.id}" data-f="role">${opt("", "—", !i.role)}${opt("bed", "Отбой (для сна)", i.role === "bed")}${opt("wake", "Подъём (для сна)", i.role === "wake")}</select></label>` : ""}
+      ${i.type !== "computed" ? `<label class="row">🔔 Напомнить<input type="time" data-chg="item" data-id="${i.id}" data-f="remind" value="${esc(remindOf(i))}" aria-label="Время напоминания"></label>` : ""}
       <label class="row">С<input type="date" data-chg="item" data-id="${i.id}" data-f="from" value="${esc(i.from)}"></label>
       <label class="row">По<input type="date" data-chg="item" data-id="${i.id}" data-f="to" value="${esc(i.to)}"></label>
       ${i.type === "duration" ? `<span class="muted">Таймеры: ${timersBy[i.id] ? esc(timersBy[i.id].join(", ")) : "нет (связь задаётся в настройках таймера)"}</span>` : ""}

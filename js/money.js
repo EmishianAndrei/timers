@@ -142,6 +142,7 @@ VIEWS.goals = () => {
 VIEWS.settings = () => {
   const counts = Object.keys(SCHEMA).map(c => [c, Object.keys(S.cols[c]).length]);
   return `<div class="bar"><h2>Настройки и база</h2></div>${scriptBanner()}
+  ${remindersHtml()}
   <section class="panel"><h3>Подключение к Google-таблице</h3>
     <p class="muted small">Адрес веб-приложения Apps Script и ключ из переменной SECRET в скрипте. Инструкция по установке есть в README репозитория.</p>
     <form class="form" data-form="cfg" autocomplete="off" style="flex-direction:column;align-items:stretch">
@@ -149,7 +150,7 @@ VIEWS.settings = () => {
       <label class="row" style="flex-direction:column;align-items:stretch;gap:4px"><span class="label">Ключ</span><input type="password" name="key" value="${esc(S.cfg.key)}" placeholder="тот же, что в SECRET"></label>
       <div class="row"><button class="btn btn-primary" type="submit">Сохранить и синхронизировать</button>${S.cfg.url ? `<button type="button" class="btn" data-act="syncNow">Синхронизировать сейчас</button>` : ""}</div>
     </form>
-    <div class="small"><span class="chip ${syncState === "ok" ? "tag-good" : ""}">${esc($("#syncChip span")?.textContent || "")}</span>
+    <div class="small"><span class="chip ${syncState === "ok" ? "tag-good" : ""}">${esc(syncLabel())}</span>
       ${S.lastSync ? ` <span class="muted">последняя синхронизация: ${new Date(S.lastSync).toLocaleString("ru-RU")}</span>` : ""}
       ${syncMsg ? `<div class="neg" style="margin-top:6px">${esc(syncMsg)}</div>` : ""}
       ${S.outbox.length ? `<div class="muted" style="margin-top:6px">Изменений ждут отправки: ${S.outbox.length}. Они хранятся в браузере и уйдут при следующей связи.</div>` : ""}</div>

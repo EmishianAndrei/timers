@@ -8,7 +8,7 @@ const SCHEMA = {
   timers:     ["id","name","group","color","order","itemId","archived","runningSince","created","cdMin","cdAcc","cdRang","updated"],
   sessions:   ["id","timerId","date","start","end","minutes","updated"],
   sections:   ["id","name","order","total","updated"],
-  items:      ["id","sectionId","name","type","options","role","order","from","to","updated"],
+  items:      ["id","sectionId","name","type","options","role","order","from","to","remind","updated"],
   entries:    ["id","date","itemId","value","updated"],
   recipes:    ["id","kind","ftype","num","name","short","cat","unit","pack","kcal","prot","fat","carb","sugar","extra","ingredients","steps","notes","order","updated"],
   weekly:     ["id","name","order","archived","updated"],
@@ -104,7 +104,7 @@ window.addEventListener("scroll", () => tipEl.hidden = true, {passive: true});
 
 // ---------- хранилище ----------
 const LSKEY = "tracker-v2", UIKEY = "tracker-ui";
-let S = {cols: {}, outbox: [], cfg: {url: "", key: ""}, lastSync: 0, seq: 0};
+let S = {cols: {}, outbox: [], cfg: {url: "", key: ""}, lastSync: 0, lastPull: 0, seq: 0};
 let U = {tab: "today", trView: "day", trDate: today(), trMonth: mkey(today()), tmDate: today(), finMonth: mkey(today()), goalMonth: mkey(today()), list: "", showDone: false, taskSort: "my"};
 
 function load() {
@@ -158,7 +158,7 @@ function moveIn(c, list, id, n) {
 }
 
 // ---------- синхронизация ----------
-const NEED_SCRIPT = 3; let scriptVersion = 0;
+const NEED_SCRIPT = 4; let scriptVersion = 0;
 let syncing = false, syncT = null, syncState = "off", syncMsg = "";
 function syncLabel() {
   const pending = S.outbox.length;
@@ -166,50 +166,60 @@ function syncLabel() {
     syncState === "err" ? "Ошибка связи" + (pending ? " · " + pending + " в очереди" : "") :
     pending ? pending + " в очереди" : "Синхронизировано";
 }
-function paintSync() { const el = $("#syncChip"); el.className = "sync " + syncState; el.querySelector("span").textContent = syncLabel(); el.title = syncMsg; }
+function paintSync() { document.querySelectorAll("[data-sync]").forEach(el => { el.className = "sync " + syncState + (el.classList.contains("side-sync") ? " side-sync" : ""); el.querySelector("span").textContent = syncLabel(); el.title = syncMsg; }); }
 function setSync(st, msg) {
   syncState = st || (S.cfg.url ? "ok" : "off"); syncMsg = msg || "";
   paintSync();
   if (U.tab === "settings" && !isEditing()) render();
 }
-function scheduleSync(ms = 1500) {
+function scheduleSync(ms = 700) {
   if (!S.cfg.url || !S.cfg.key) { setSync("off"); return; }
-  clearTimeout(syncT); syncT = setTimeout(sync, ms);
+  clearTimeout(syncT); syncT = setTimeout(() => sync(), ms);
 }
 function errText(j) {
   return ({no_secret: "В скрипте не задан ключ (SECRET).", bad_key: "Ключ на сайте не совпадает с ключом в скрипте.",
     busy: "База занята другим устройством, повторю позже.", bad_json: "Скрипт не понял запрос."})[j.error] || ("Ошибка скрипта: " + (j.message || j.error));
 }
-async function sync(manual) {
+const PULL_EVERY = 60000;
+/**
+ * Синхронизация. Изменения отправляются сразу и без выгрузки всей базы (это быстро);
+ * свежие данные из таблицы подкачиваются отдельно: при открытии, при возврате на вкладку, раз в минуту и по кнопке.
+ * pull: true — обязательно подкачать.
+ */
+async function sync(manual, pull) {
   if (!S.cfg.url || !S.cfg.key) { setSync("off"); return; }
-  if (syncing) { scheduleSync(2000); return; }
-  syncing = true; setSync("busy");
+  if (syncing) { if (pull || manual) wantPull = true; scheduleSync(1200); return; }
+  const doPull = !!(manual || pull || wantPull || !S.lastPull || Date.now() - S.lastPull > PULL_EVERY);
   const ops = S.outbox.slice(0, 300);
+  if (!ops.length && !doPull) { setSync("ok"); return; }
+  syncing = true; wantPull = false; setSync("busy");
   const sent = new Set(ops.map(o => o.seq));
   try {
     const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 45000);
     let res;
-    try { res = await fetch(S.cfg.url, {method: "POST", body: JSON.stringify({key: S.cfg.key, ops: ops.map(({seq, ...o}) => o), pull: true}), signal: ctl.signal}); }
+    try { res = await fetch(S.cfg.url, {method: "POST", body: JSON.stringify({key: S.cfg.key, ops: ops.map(({seq, ...o}) => o), pull: doPull}), signal: ctl.signal}); }
     catch (x) { throw x.name === "AbortError" ? new Error("База не ответила за 45 секунд, повторю позже.") : x; }
     finally { clearTimeout(to); }
     const txt = await res.text();
     let j; try { j = JSON.parse(txt); } catch (e) { throw new Error("Скрипт вернул не JSON. Проверьте, что развёрнуто веб-приложение с доступом «Все»."); }
     if (!j.ok) throw new Error(errText(j));
     S.outbox = S.outbox.filter(o => !sent.has(o.seq));
-    if (j.data) merge(j.data);
+    if (j.data) { merge(j.data); S.lastPull = Date.now(); }
     scriptVersion = Number(j.version) || 1;
     if (String(setting("scriptVersion", "")) !== String(scriptVersion)) setSetting("scriptVersion", scriptVersion); // видно в таблице на листе settings
     S.lastSync = Date.now(); saveNow();
     setSync("ok");
     if (manual) toast("Синхронизировано");
-    if (S.outbox.length) setTimeout(() => sync(), 300);
+    if (S.outbox.length || wantPull) setTimeout(() => sync(), 200);
   } catch (e) {
     const msg = e instanceof TypeError ? "Нет связи с базой. Проверьте интернет и адрес скрипта." : (e.message || String(e));
     setSync("err", msg);
     scheduleSync(30000);
     if (manual) toast(msg, 6000);
-  } finally { syncing = false; }
+  } finally { syncing = false; afterSync.forEach(f => f()); }
 }
+const afterSync = [];
+let wantPull = false;
 function merge(data) {
   const pending = {};
   for (const o of S.outbox) (pending[o.c] = pending[o.c] || new Set()).add(o.r ? o.r.id : o.id);
@@ -236,12 +246,12 @@ document.addEventListener("pointerup", () => { ptrDown = false; setTimeout(() =>
 function requestRender() { if (ptrDown) { pendRender = true; return; } render(); }
 
 /** предупреждение, если в таблице работает старая версия скрипта */
-const scriptBanner = () => scriptVersion && scriptVersion < NEED_SCRIPT ? `<div class="panel warn"><b>Скрипт базы устарел, поэтому рецепты и продукты из таблицы не доходят до сайта.</b>
-  <span>Обновите его один раз: Apps Script → вставьте новый код Code.gs → Ctrl+S → Deploy → Manage deployments → ✎ → Version: <b>New version</b> → Deploy. Потом здесь нажмите «Синхронизировать сейчас» в Настройках.</span></div>` : "";
+const scriptBanner = () => scriptVersion && scriptVersion < NEED_SCRIPT ? `<div class="panel warn"><b>Обновите скрипт базы — синхронизация станет в несколько раз быстрее.</b>
+  <span>Apps Script → вставьте новый код Code.gs (ключ SECRET оставьте свой) → Ctrl+S → «Начать развёртывание» → «Управление развёртываниями» → ✎ → Версия: <b>Новая версия</b> → «Начать развёртывание». Адрес не изменится.</span></div>` : "";
 const afterRender = [];
 function render() {
   pendRender = false;
-  document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === U.tab ? "page" : "false"));
+  document.querySelectorAll(".side-nav [data-tab], .bottom [data-tab]").forEach(b => b.setAttribute("aria-current", b.dataset.tab === U.tab ? "page" : "false"));
   const fn = VIEWS[U.tab] || VIEWS.timers;
   const y = window.scrollY;
   // запоминаем прокрутку таблиц и прочих блоков, чтобы после перерисовки они не прыгали к началу

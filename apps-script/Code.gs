@@ -17,7 +17,7 @@
 const SECRET = 'ВСТАВЬТЕ_СВОЙ_КЛЮЧ';
 const BACKUP_FOLDER = 'Трекер — резервные копии';
 const BACKUP_KEEP = 30;
-const VERSION = 3; // сайт проверяет версию и подсказывает, если скрипт пора обновить
+const VERSION = 4; // сайт проверяет версию и подсказывает, если скрипт пора обновить
 
 // Листы базы и их столбцы (как SCHEMA в js/core.js). Новые столбцы и листы создаются сами при первой записи.
 const SCHEMA = {
@@ -25,7 +25,7 @@ const SCHEMA = {
   timers:     ['id', 'name', 'group', 'color', 'order', 'itemId', 'archived', 'runningSince', 'created', 'cdMin', 'cdAcc', 'cdRang', 'updated'],
   sessions:   ['id', 'timerId', 'date', 'start', 'end', 'minutes', 'updated'],
   sections:   ['id', 'name', 'order', 'total', 'updated'],
-  items:      ['id', 'sectionId', 'name', 'type', 'options', 'role', 'order', 'from', 'to', 'updated'],
+  items:      ['id', 'sectionId', 'name', 'type', 'options', 'role', 'order', 'from', 'to', 'remind', 'updated'],
   entries:    ['id', 'date', 'itemId', 'value', 'updated'],
   recipes:    ['id', 'kind', 'ftype', 'num', 'name', 'short', 'cat', 'unit', 'pack', 'kcal', 'prot', 'fat', 'carb', 'sugar', 'extra', 'ingredients', 'steps', 'notes', 'order', 'updated'],
   weekly:     ['id', 'name', 'order', 'archived', 'updated'],
@@ -52,19 +52,21 @@ function doPost(e) {
   if (!SECRET || SECRET === 'ВСТАВЬТЕ_СВОЙ_КЛЮЧ') return out({ ok: false, error: 'no_secret' });
   if (req.key !== SECRET) return out({ ok: false, error: 'bad_key' });
 
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(25000)) return out({ ok: false, error: 'busy' });
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hasOps = Array.isArray(req.ops) && req.ops.length > 0;
+  // Чтение без записи не ждёт блокировку — так синхронизация не стоит в очереди за другим устройством.
+  const lock = hasOps ? LockService.getScriptLock() : null;
+  if (lock && !lock.tryLock(25000)) return out({ ok: false, error: 'busy' });
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let applied = 0;
-    if (Array.isArray(req.ops) && req.ops.length) applied = applyOps(ss, req.ops);
+    const applied = hasOps ? applyOps(ss, req.ops) : 0;
     const res = { ok: true, applied: applied, time: Date.now(), version: VERSION };
     if (req.pull) res.data = readAll(ss);
+    if (req.filled) res.filled = filledOn(ss, String(req.filled)); // для напоминаний: что уже отмечено за день
     return out(res);
   } catch (err) {
     return out({ ok: false, error: 'server', message: String(err && err.message || err) });
   } finally {
-    lock.releaseLock();
+    if (lock) lock.releaseLock();
   }
 }
 
@@ -107,7 +109,11 @@ function plain(v, tz) {
   return String(v);
 }
 
-/** ops: [{c: 'tasks', op: 'put', r: {...}} | {c: 'tasks', op: 'del', id: '...'}] */
+/**
+ * ops: [{c: 'tasks', op: 'put', r: {...}} | {c: 'tasks', op: 'del', id: '...'}]
+ * Лист читается одним запросом, а записываются только изменённые строки — это в разы быстрее,
+ * чем переписывать весь лист при каждой галочке.
+ */
 function applyOps(ss, ops) {
   const byCol = {};
   ops.forEach(function (o) {
@@ -118,74 +124,112 @@ function applyOps(ss, ops) {
   const tz = ss.getSpreadsheetTimeZone();
   Object.keys(byCol).forEach(function (name) {
     const sh = sheetFor(ss, name);
-    let headers = headersOf(sh);
-    const lastRow = sh.getLastRow();
-    let rows = lastRow > 1 ? sh.getRange(2, 1, lastRow - 1, headers.length).getValues() : [];
-    rows = rows.map(function (r) { return r.map(function (v) { return plain(v, tz); }); });
+    const all = sh.getDataRange().getValues();
+    const headers = (all[0] || []).map(String);
+    while (headers.length && !headers[headers.length - 1]) headers.pop();
+    const width0 = headers.length;
+    const rows = all.slice(1).map(function (r) { return r.slice(0, Math.max(width0, 1)).map(function (v) { return plain(v, tz); }); });
+    const n0 = rows.length;
     const idCol = headers.indexOf('id');
     const updCol = headers.indexOf('updated');
     const index = {};
     rows.forEach(function (r, i) { if (r[idCol]) index[r[idCol]] = i; });
-    const dead = {};
+    const dead = {}, touched = {};
 
     byCol[name].forEach(function (o) {
       if (o.op === 'del') {
-        if (o.id in index) { dead[index[o.id]] = true; applied++; }
+        if (o.id in index && !dead[index[o.id]]) { dead[index[o.id]] = true; applied++; }
         return;
       }
       const rec = o.r;
       if (!rec || !rec.id) return;
       Object.keys(rec).forEach(function (k) {
-        if (headers.indexOf(k) < 0 && /^[A-Za-z][A-Za-z0-9]{0,40}$/.test(k)) {
-          headers.push(k);
-          rows.forEach(function (r) { r.push(''); });
-        }
+        if (headers.indexOf(k) < 0 && /^[A-Za-z][A-Za-z0-9]{0,40}$/.test(k)) headers.push(k);
       });
       const i = index[rec.id];
       if (i !== undefined && !dead[i]) {
         const cur = Number(rows[i][updCol] || 0);
         if (cur > Number(rec.updated || 0)) return; // на сервере более свежая версия
         headers.forEach(function (h, j) { if (h in rec) rows[i][j] = cell(rec[h]); });
+        touched[i] = true;
       } else {
-        const row = headers.map(function (h) { return h in rec ? cell(rec[h]) : ''; });
         index[rec.id] = rows.length;
-        rows.push(row);
+        rows.push(headers.map(function (h) { return h in rec ? cell(rec[h]) : ''; }));
       }
       applied++;
     });
 
-    const keep = rows.filter(function (r, i) { return !dead[i]; });
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
-    if (lastRow > 1) sh.getRange(2, 1, lastRow - 1, Math.max(headers.length, sh.getLastColumn())).clearContent();
-    if (keep.length) {
-      if (sh.getMaxRows() < keep.length + 1) sh.insertRowsAfter(sh.getMaxRows(), keep.length + 1 - sh.getMaxRows());
-      const rng = sh.getRange(2, 1, keep.length, headers.length);
-      rng.setNumberFormat('@');
-      rng.setValues(keep);
+    const W = headers.length;
+    rows.forEach(function (r) { while (r.length < W) r.push(''); });
+    if (W > width0) {
+      sh.getRange(1, 1, 1, W).setValues([headers]).setFontWeight('bold');
+      if (sh.getMaxColumns() >= W) sh.getRange(1, width0 + 1, sh.getMaxRows(), W - width0).setNumberFormat('@');
     }
+    const deadList = Object.keys(dead).map(Number);
+    const upd = Object.keys(touched).map(Number).filter(function (i) { return i < n0 && !dead[i]; });
+
+    if (deadList.length > 15 || upd.length > 40) {
+      // много изменений — проще переписать лист целиком
+      const keep = rows.filter(function (r, i) { return !dead[i]; });
+      if (n0) sh.getRange(2, 1, n0, Math.max(W, sh.getLastColumn())).clearContent();
+      if (keep.length) {
+        if (sh.getMaxRows() < keep.length + 1) sh.insertRowsAfter(sh.getMaxRows(), keep.length + 1 - sh.getMaxRows());
+        const rng = sh.getRange(2, 1, keep.length, W);
+        rng.setNumberFormat('@');
+        rng.setValues(keep);
+      }
+      return;
+    }
+    // 1) изменённые строки — на месте
+    upd.forEach(function (i) { sh.getRange(i + 2, 1, 1, W).setValues([rows[i]]); });
+    // 2) новые строки — одним блоком в конец
+    const added = rows.slice(n0).filter(function (r, k) { return !dead[n0 + k]; });
+    if (added.length) {
+      const at = n0 + 2;
+      if (sh.getMaxRows() < at + added.length - 1) sh.insertRowsAfter(sh.getMaxRows(), at + added.length - 1 - sh.getMaxRows());
+      const rng = sh.getRange(at, 1, added.length, W);
+      rng.setNumberFormat('@');
+      rng.setValues(added);
+    }
+    // 3) удалённые — снизу вверх, чтобы номера строк не съезжали
+    deadList.filter(function (i) { return i < n0; }).sort(function (a, b) { return b - a; })
+      .forEach(function (i) { sh.deleteRow(i + 2); });
   });
   return applied;
 }
 
+/** Все коллекции: каждый лист читается одним запросом. */
 function readAll(ss) {
   const tz = ss.getSpreadsheetTimeZone();
   const data = {};
   ss.getSheets().forEach(function (sh) {
     const name = sh.getName();
-    const headers = headersOf(sh);
-    if (!SCHEMA[name] && headers[0] !== 'id') return; // любой лист с первым столбцом id — это коллекция
-    const lastRow = sh.getLastRow();
+    if (!SCHEMA[name] && String(sh.getRange(1, 1).getValue()) !== 'id') return; // любой лист с первым столбцом id — тоже коллекция
+    const all = sh.getDataRange().getValues();
+    const headers = (all[0] || []).map(String);
     const list = [];
-    if (lastRow > 1 && headers.length) {
-      sh.getRange(2, 1, lastRow - 1, headers.length).getValues().forEach(function (r) {
-        const rec = {};
-        headers.forEach(function (h, j) { if (h) rec[h] = plain(r[j], tz); });
-        if (rec.id) list.push(rec);
-      });
+    for (let i = 1; i < all.length; i++) {
+      const r = all[i], rec = {};
+      for (let j = 0; j < headers.length; j++) if (headers[j]) rec[headers[j]] = plain(r[j], tz);
+      if (rec.id) list.push(rec);
     }
     data[name] = list;
   });
   return data;
+}
+
+/** Записи трекера за один день: {itemId: value}. Нужно уведомлениям, чтобы не напоминать о том, что уже отмечено. */
+function filledOn(ss, date) {
+  const sh = ss.getSheetByName('entries');
+  if (!sh) return {};
+  const tz = ss.getSpreadsheetTimeZone();
+  const all = sh.getDataRange().getValues();
+  const h = (all[0] || []).map(String), di = h.indexOf('date'), ii = h.indexOf('itemId'), vi = h.indexOf('value');
+  const res = {};
+  for (let i = 1; i < all.length; i++) {
+    if (plain(all[i][di], tz) === date && all[i][vi] !== '') res[String(all[i][ii])] = plain(all[i][vi], tz);
+  }
+  return res;
 }
 
 /** Запустить один раз вручную: листы + ежедневная резервная копия. */

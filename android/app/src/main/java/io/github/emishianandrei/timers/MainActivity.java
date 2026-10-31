@@ -1,14 +1,18 @@
 package io.github.emishianandrei.timers;
 
+import android.Manifest;
 import android.app.Activity;
+import android.app.NotificationManager;
 import android.content.ActivityNotFoundException;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.util.Base64;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -36,6 +40,7 @@ public class MainActivity extends Activity {
     static final String HOST = "emishianandrei.github.io";
     static final String START = "https://" + HOST + "/timers/";
     static final int PICK_FILE = 1;
+    static final int ASK_NOTIF = 2;
 
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
@@ -106,8 +111,47 @@ public class MainActivity extends Activity {
             }
         });
 
+        Reminders.ensureChannel(this);
+        Reminders.scheduleNext(this);
         if (state != null) web.restoreState(state);
-        else web.loadUrl(START);
+        else web.loadUrl(START + ("today".equals(getIntent().getStringExtra("open")) ? "#today" : ""));
+    }
+
+    boolean notifGranted() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false;
+        return getSystemService(NotificationManager.class).areNotificationsEnabled();
+    }
+
+    void askNotif() {
+        if (notifGranted()) { js("window.onNativePerm&&onNativePerm()"); return; }
+        boolean asked = Reminders.prefs(this).getBoolean("askedNotif", false);
+        if (Build.VERSION.SDK_INT >= 33 && (!asked || shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS))) {
+            Reminders.prefs(this).edit().putBoolean("askedNotif", true).apply();
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, ASK_NOTIF);
+        } else {
+            // уже отказывали — открываем настройки уведомлений приложения
+            try {
+                startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName()));
+            } catch (ActivityNotFoundException ignored) {
+            }
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
+        super.onRequestPermissionsResult(req, perms, res);
+        if (req == ASK_NOTIF) js("window.onNativePerm&&onNativePerm()");
+    }
+
+    private void js(String code) {
+        runOnUiThread(() -> { if (web != null) web.evaluateJavascript(code, null); });
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if ("today".equals(intent.getStringExtra("open"))) js("location.hash='#today';window.onNativeResume&&onNativeResume()");
     }
 
     private void openOutside(Uri u) {
@@ -130,6 +174,40 @@ public class MainActivity extends Activity {
     }
 
     class Bridge {
+        // ---- напоминания ----
+        @JavascriptInterface
+        public void setConfig(String json) { Reminders.prefs(MainActivity.this).edit().putString("cfg", json).apply(); }
+
+        @JavascriptInterface
+        public void setSchedule(String json) {
+            if (json.equals(Reminders.prefs(MainActivity.this).getString("schedule", ""))) return;
+            Reminders.prefs(MainActivity.this).edit().putString("schedule", json).apply();
+            Reminders.scheduleNext(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public void setDone(String json) {
+            Reminders.prefs(MainActivity.this).edit().putString("done", json).apply();
+            Reminders.refreshShown(MainActivity.this);
+        }
+
+        /** отметки из уведомлений, которые сайт ещё не видел */
+        @JavascriptInterface
+        public String takePending() {
+            String p = Reminders.prefs(MainActivity.this).getString("pending", "[]");
+            Reminders.prefs(MainActivity.this).edit().putString("pending", "[]").apply();
+            return p;
+        }
+
+        @JavascriptInterface
+        public String notifStatus() { return notifGranted() ? "granted" : "denied"; }
+
+        @JavascriptInterface
+        public void requestNotif() { runOnUiThread(MainActivity.this::askNotif); }
+
+        @JavascriptInterface
+        public void testNotif() { Reminders.test(MainActivity.this); }
+
         @JavascriptInterface
         public void save(String b64, String mime) {
             String name = "tracker-backup-" + new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date()) + ".json";
@@ -184,6 +262,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         web.onResume();
+        js("window.onNativePerm&&onNativePerm();window.onNativeResume&&onNativeResume()");
     }
 
     @Override

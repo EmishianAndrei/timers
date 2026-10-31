@@ -2,9 +2,9 @@
 /* Запуск: обработчики событий, вкладки, ежесекундный тик. */
 
 Object.assign(ACT, {
-  moreMenu: () => { $("#moreSheet").hidden = false; },
-  moreClose: (el, e) => { if (e.target === el) el.hidden = true; },
-  tab: el => { $("#moreSheet").hidden = true; U.tab = el.dataset.tab; U.menu = null; U.modal = null; saveUI(); history.replaceState(null, "", "#" + U.tab); render(); window.scrollTo(0, 0); },
+  sideOpen: () => { document.body.classList.add("side-open"); $("#sideBg").hidden = false; $("#side .side-nav [aria-current=page]")?.focus(); },
+  sideClose: () => { document.body.classList.remove("side-open"); $("#sideBg").hidden = true; },
+  tab: el => { ACT.sideClose(); U.tab = el.dataset.tab; U.menu = null; U.modal = null; saveUI(); history.replaceState(null, "", "#" + U.tab); render(); window.scrollTo(0, 0); },
 });
 
 document.addEventListener("click", e => {
@@ -20,6 +20,7 @@ document.addEventListener("submit", e => {
   e.preventDefault(); const fn = FORM[f.dataset.form]; if (fn) fn(f);
 });
 document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && document.body.classList.contains("side-open")) { ACT.sideClose(); return; }
   if (e.key === "Enter" && e.target.matches("input[data-chg]") && e.target.type !== "checkbox" && !e.target.closest(".gt")) e.target.blur();
 });
 
@@ -57,14 +58,13 @@ function migrateV1() {
 load();
 U.tab = "today"; // при открытии — экран «Сегодня»
 const h0 = location.hash.slice(1); if (VIEWS[h0]) U.tab = h0;
-afterRender.push(() => { const extra = ["finance", "goals", "settings"].includes(U.tab); const mb = document.querySelector("#tabs .morebtn"); if (mb) mb.setAttribute("aria-current", extra ? "page" : "false"); });
 migrateV1();
 render();
 setSync(S.cfg.url ? "ok" : "off");
-if (S.cfg.url) sync();
+if (S.cfg.url) sync(false, true);
 setInterval(tick, 1000);
 setInterval(() => { if (document.visibilityState === "visible") sync(); }, 60000);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { sync(); tick(); } });
-window.addEventListener("online", () => sync());
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { sync(false, Date.now() - S.lastPull > 15000); tick(); } });
+window.addEventListener("online", () => sync(false, true));
 window.addEventListener("hashchange", () => { const t = location.hash.slice(1); if (VIEWS[t] && t !== U.tab) { U.tab = t; render(); } });
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
