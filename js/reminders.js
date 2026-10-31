@@ -51,7 +51,7 @@ function takeNativePending() {
   let arr = [];
   try { arr = JSON.parse(NATIVE.takePending() || "[]"); } catch (e) {}
   if (!arr.length) return;
-  batch(() => arr.forEach(p => { if (p && p.date && get("items", p.itemId) && val(p.date, p.itemId) !== p.value) setVal(p.date, p.itemId, p.value); }));
+  batch(() => arr.forEach(p => { if (p && p.date && p.itemId && val(p.date, p.itemId) !== p.value) setVal(p.date, p.itemId, p.value); }));
 }
 const notifState = () => { try { return NATIVE ? NATIVE.notifStatus() : "none"; } catch (e) { return "none"; } };
 window.onNativePerm = () => { if (U.tab === "settings" || U.tab === "today") softRender(); };

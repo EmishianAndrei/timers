@@ -59,6 +59,7 @@ load();
 U.tab = "today"; // при открытии — экран «Сегодня»
 const h0 = location.hash.slice(1); if (VIEWS[h0]) U.tab = h0;
 migrateV1();
+takeNativePending();
 render();
 setSync(S.cfg.url ? "ok" : "off");
 if (S.cfg.url) sync(false, true);
