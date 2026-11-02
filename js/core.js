@@ -158,7 +158,7 @@ function moveIn(c, list, id, n) {
 }
 
 // ---------- синхронизация ----------
-const NEED_SCRIPT = 4; let scriptVersion = 0;
+const NEED_SCRIPT = 5; let scriptVersion = 0;
 let syncing = false, syncT = null, syncState = "off", syncMsg = "";
 function syncLabel() {
   const pending = S.outbox.length;
@@ -205,6 +205,7 @@ async function sync(manual, pull) {
     if (!j.ok) throw new Error(errText(j));
     S.outbox = S.outbox.filter(o => !sent.has(o.seq));
     if (j.data) { merge(j.data); S.lastPull = Date.now(); }
+    if (j.exported || j.exportError) noteExport(j);
     scriptVersion = Number(j.version) || 1;
     if (String(setting("scriptVersion", "")) !== String(scriptVersion)) setSetting("scriptVersion", scriptVersion); // видно в таблице на листе settings
     S.lastSync = Date.now(); saveNow();
@@ -219,6 +220,14 @@ async function sync(manual, pull) {
   } finally { syncing = false; afterSync.forEach(f => f()); }
 }
 const afterSync = [];
+/** итог выгрузки времени в таблицу расписания месяца (скрипт v5) */
+let lastExport = null;
+function noteExport(j) {
+  const was = lastExport && lastExport.error;
+  lastExport = {at: Date.now(), error: j.exportError || "", cells: j.exported ? j.exported.cells : 0, added: j.exported ? j.exported.added || [] : []};
+  if (lastExport.error && !was) toast("Время не попало в расписание: " + lastExport.error, 7000);
+  if (lastExport.added.length) toast("В расписание добавлены строки: " + lastExport.added.join(", "), 6000);
+}
 let wantPull = false;
 function merge(data) {
   const pending = {};

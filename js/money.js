@@ -143,6 +143,7 @@ VIEWS.settings = () => {
   const counts = Object.keys(SCHEMA).map(c => [c, Object.keys(S.cols[c]).length]);
   return `<div class="bar"><h2>Настройки и база</h2></div>${scriptBanner()}
   ${remindersHtml()}
+  ${scheduleHtml()}
   <section class="panel"><h3>Подключение к Google-таблице</h3>
     <p class="muted small">Адрес веб-приложения Apps Script и ключ из переменной SECRET в скрипте. Инструкция по установке есть в README репозитория.</p>
     <form class="form" data-form="cfg" autocomplete="off" style="flex-direction:column;align-items:stretch">
@@ -162,6 +163,34 @@ VIEWS.settings = () => {
     <details><summary class="muted small">Что хранится</summary><div class="small muted" style="margin-top:6px">${counts.map(([c, n]) => `${c}: ${n}`).join(" · ")}</div></details>
   </section>`;
 };
+
+/** таблицы «Расписание <месяц>»: туда скрипт сам вписывает время таймеров (ч:мм) */
+function scheduleHtml() {
+  const links = setting("scheduleSheets", "");
+  const st = !lastExport ? "" : lastExport.error
+    ? `<div class="neg small">Последняя выгрузка не удалась: ${esc(lastExport.error)}. Если это «нет доступа» — в Apps Script один раз выберите функцию exportAll и нажмите «Выполнить».</div>`
+    : `<div class="small muted">Выгружено ${new Date(lastExport.at).toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit"})}${lastExport.cells ? ", изменено ячеек: " + lastExport.cells : ", без изменений"}.</div>`;
+  return `<section class="panel"><h3>Расписание месяца</h3>
+    <p class="small muted">Время таймеров и строк «время» из трекера само попадает на лист Main этих таблиц — в часах и минутах. Таймер, привязанный к строке трекера, пишется в её строку; остальные — в строку с названием таймера (если такой нет, она появится в разделе «Личное»). Новый месяц — добавьте ссылку на новую таблицу с новой строки.</p>
+    <textarea data-chg="scheduleSheets" rows="2" placeholder="https://docs.google.com/spreadsheets/d/…" aria-label="Ссылки на таблицы расписания">${esc(links)}</textarea>
+    <div class="row">${S.cfg.url ? `<button type="button" class="btn" data-act="exportNow">Обновить расписание сейчас</button>` : ""}${scriptVersion && scriptVersion < 5 ? `<span class="small neg">Нужен скрипт базы версии 5.</span>` : ""}</div>
+    ${st}</section>`;
+}
+
+Object.assign(ACT, {
+  exportNow: async el => {
+    el.disabled = true; el.textContent = "Обновляю…";
+    try {
+      const res = await fetch(S.cfg.url, {method: "POST", body: JSON.stringify({key: S.cfg.key, ops: [], exportAll: true})});
+      const j = JSON.parse(await res.text());
+      if (!j.ok) throw new Error(errText(j));
+      noteExport(j.exported || j.exportError ? j : Object.assign(j, {exportError: "скрипт базы старой версии — обновите до версии 5"}));
+      if (!lastExport.error) toast(lastExport.cells ? "Расписание обновлено: ячеек " + lastExport.cells : "Расписание уже актуально");
+    } catch (e) { toast("Не получилось: " + (e.message || e), 6000); }
+    render();
+  },
+});
+Object.assign(CHG, { scheduleSheets: el => setSetting("scheduleSheets", el.value.trim()) });
 
 Object.assign(ACT, {
   finMonth: el => { U.finMonth = shiftMonth(U.finMonth, +el.dataset.n); saveUI(); render(); },

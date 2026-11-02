@@ -12,12 +12,17 @@
  *
  * После правки кода: «Начать развёртывание» → «Управление развёртываниями» → карандаш →
  * Версия: «Новая версия» → «Начать развёртывание». URL при этом не меняется.
+ *
+ * Расписание месяца: время таймеров и строк «время» из трекера само попадает на лист Main таблиц
+ * из настройки scheduleSheets (ссылки на «Расписание Ноябрь» и т. п.) — в формате ч:мм.
+ * Один раз после установки выберите функцию exportAll и нажмите «Выполнить»: она попросит доступ
+ * к таблицам расписания и заполнит уже накопленное время.
  */
 
 const SECRET = 'ВСТАВЬТЕ_СВОЙ_КЛЮЧ';
 const BACKUP_FOLDER = 'Трекер — резервные копии';
 const BACKUP_KEEP = 30;
-const VERSION = 4; // сайт проверяет версию и подсказывает, если скрипт пора обновить
+const VERSION = 5; // сайт проверяет версию и подсказывает, если скрипт пора обновить
 
 // Листы базы и их столбцы (как SCHEMA в js/core.js). Новые столбцы и листы создаются сами при первой записи.
 const SCHEMA = {
@@ -57,17 +62,25 @@ function doPost(e) {
   // Чтение без записи не ждёт блокировку — так синхронизация не стоит в очереди за другим устройством.
   const lock = hasOps ? LockService.getScriptLock() : null;
   if (lock && !lock.tryLock(25000)) return out({ ok: false, error: 'busy' });
+  let res, target = false;
   try {
+    if (hasOps) target = exportDates(ss, req.ops); // какие дни расписания затронуты (смотрим до записи)
     const applied = hasOps ? applyOps(ss, req.ops) : 0;
-    const res = { ok: true, applied: applied, time: Date.now(), version: VERSION };
+    res = { ok: true, applied: applied, time: Date.now(), version: VERSION };
     if (req.pull) res.data = readAll(ss);
     if (req.filled) res.filled = filledOn(ss, String(req.filled)); // для напоминаний: что уже отмечено за день
-    return out(res);
   } catch (err) {
     return out({ ok: false, error: 'server', message: String(err && err.message || err) });
   } finally {
     if (lock) lock.releaseLock();
   }
+  // Время → таблица расписания месяца. Ошибка здесь не ломает синхронизацию.
+  if (req.exportAll) target = null;
+  if (target !== false) {
+    try { res.exported = exportSchedule(ss, target); }
+    catch (err) { res.exportError = String(err && err.message || err); }
+  }
+  return out(res);
 }
 
 function out(obj) {
@@ -230,6 +243,185 @@ function filledOn(ss, date) {
     if (plain(all[i][di], tz) === date && all[i][vi] !== '') res[String(all[i][ii])] = plain(all[i][vi], tz);
   }
   return res;
+}
+
+/* ================= Расписание месяца ================= */
+const SCHEDULE_TAB = 'Main';
+const normName = function (v) { return String(v == null ? '' : v).toLowerCase().replace(/\s+/g, ' ').trim(); };
+
+/** Таблицы расписания: настройка scheduleSheets — ссылки или ID через пробел, запятую или с новой строки. */
+function scheduleIds(ss) {
+  const rec = tableOf(ss, 'settings').filter(function (r) { return String(r.id) === 'scheduleSheets'; })[0];
+  if (!rec) return [];
+  return String(rec.value || '').split(/[\s,;]+/).map(function (x) {
+    const m = /\/d\/([A-Za-z0-9_-]{20,})/.exec(x);
+    return m ? m[1] : (/^[A-Za-z0-9_-]{20,}$/.test(x) ? x : '');
+  }).filter(Boolean);
+}
+
+function tableOf(ss, name) {
+  const sh = ss.getSheetByName(name);
+  if (!sh) return [];
+  const all = sh.getDataRange().getValues(), h = (all[0] || []).map(String), list = [];
+  for (let i = 1; i < all.length; i++) {
+    const o = {};
+    for (let j = 0; j < h.length; j++) if (h[j]) o[h[j]] = all[i][j];
+    if (o.id !== '' && o.id != null) list.push(o);
+  }
+  return list;
+}
+
+/** Какие дни пересчитать: Set дат, null — все, false — ничего (галочки и прочее расписание не трогают). */
+function exportDates(ss, ops) {
+  const rel = ops.filter(function (o) { return o && (o.c === 'sessions' || o.c === 'entries'); });
+  if (!rel.length) return false;
+  let dur = null;
+  const days = {};
+  let any = false;
+  for (let k = 0; k < rel.length; k++) {
+    const o = rel[k];
+    if (o.c === 'sessions') {
+      if (o.op === 'del' || !o.r || !o.r.date) return null; // дата удалённой сессии неизвестна — пересчитаем всё
+      days[String(o.r.date)] = 1; any = true;
+    } else {
+      if (!dur) { dur = {}; tableOf(ss, 'items').forEach(function (it) { if (String(it.type) === 'duration') dur[String(it.id)] = 1; }); }
+      const id = o.op === 'del' ? String(o.id || '') : String(o.r && o.r.id || '');
+      const parts = id.split('|');
+      if (parts.length === 2 && dur[parts[1]]) { days[parts[0]] = 1; any = true; }
+    }
+  }
+  return any ? Object.keys(days) : false;
+}
+
+/** Минуты по строкам: таймер, привязанный к строке трекера, — в эту строку, иначе — в строку с названием таймера.
+ *  Если время строки вписано на сайте вручную, берётся оно (как в трекере). */
+function scheduleMinutes(ss) {
+  const tz = ss.getSpreadsheetTimeZone();
+  const dur = {}, secName = {};
+  tableOf(ss, 'sections').forEach(function (x) { secName[String(x.id)] = String(x.name || ''); });
+  tableOf(ss, 'items').forEach(function (it) { if (String(it.type) === 'duration') dur[String(it.id)] = it; });
+  const rows = {};
+  const row = function (label, section) { const k = normName(label); if (!k) return null; return rows[k] = rows[k] || { label: String(label).trim(), section: section || 'Личное', auto: {}, manual: {} }; };
+  Object.keys(dur).forEach(function (id) { row(dur[id].name, secName[String(dur[id].sectionId)]); });
+  const byTimer = {};
+  tableOf(ss, 'timers').forEach(function (t) { const it = dur[String(t.itemId)]; byTimer[String(t.id)] = it ? row(it.name) : row(t.name, 'Личное'); });
+  tableOf(ss, 'sessions').forEach(function (x) {
+    const r = byTimer[String(x.timerId)]; if (!r) return;
+    const m = (Number(x.end) - Number(x.start)) / 60000, d = plain(x.date, tz);
+    if (m > 0) r.auto[d] = (r.auto[d] || 0) + m;
+  });
+  tableOf(ss, 'entries').forEach(function (x) {
+    const it = dur[String(x.itemId)]; if (!it) return;
+    const v = String(x.value).replace(',', '.');
+    if (v !== '' && !isNaN(Number(v))) row(it.name).manual[plain(x.date, tz)] = Number(v);
+  });
+  return rows;
+}
+function minutesOn(r, d) { return d in r.manual ? r.manual[d] : (r.auto[d] || 0); }
+
+/** «1:30» → 90, пусто → 0, иное → NaN */
+function hmToMin(s) {
+  s = String(s || '').trim();
+  if (!s) return 0;
+  const m = /^(\d+):(\d\d)(?::\d\d)?$/.exec(s);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+}
+function dateKey(v, tz) {
+  if (v instanceof Date) return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
+  if (typeof v === 'number' && v > 30000) return Utilities.formatDate(new Date(Math.round((v - 25569) * 864e5)), 'UTC', 'yyyy-MM-dd');
+  return '';
+}
+
+/** Пишет время в таблицы расписания. days — массив дат или null (все даты листа). */
+function exportSchedule(ss, days) {
+  const ids = scheduleIds(ss);
+  if (!ids.length) return { sheets: 0, cells: 0 };
+  const rows = scheduleMinutes(ss);
+  const want = days ? days.reduce(function (o, d) { o[d] = 1; return o; }, {}) : null;
+  let cells = 0, added = [];
+  ids.forEach(function (id) {
+    const book = SpreadsheetApp.openById(id), sh = book.getSheetByName(SCHEDULE_TAB);
+    if (!sh) return;
+    const tz = book.getSpreadsheetTimeZone();
+    let all = sh.getDataRange().getValues();
+    const cols = {};
+    (all[1] || []).forEach(function (v, j) { if (j < 2) return; const d = dateKey(v, tz); if (d && (!want || want[d])) cols[d] = j; });
+    const dlist = Object.keys(cols);
+    if (!dlist.length) return;
+    const index = function () { const m = {}; all.forEach(function (r, i) { const k = normName(r[1]); if (k && !(k in m)) m[k] = i; }); return m; };
+    let idx = index();
+    Object.keys(rows).forEach(function (k) {
+      if (k in idx) return;
+      if (!dlist.some(function (d) { return Math.round(minutesOn(rows[k], d)) > 0; })) return;
+      addScheduleRow(sh, all, rows[k].label, rows[k].section);
+      added.push(rows[k].label);
+      all = sh.getDataRange().getValues(); idx = index();
+    });
+    const shown = sh.getDataRange().getDisplayValues();
+    Object.keys(rows).forEach(function (k) {
+      if (!(k in idx)) return;
+      const i = idx[k];
+      dlist.forEach(function (d) {
+        const m = Math.round(minutesOn(rows[k], d)), j = cols[d];
+        if (hmToMin(shown[i][j]) === m) return; // уже так
+        const c = sh.getRange(i + 1, j + 1);
+        if (m > 0) c.setNumberFormat('[h]:mm').setValue(m / 1440); else c.clearContent();
+        cells++;
+      });
+    });
+  });
+  return { sheets: ids.length, cells: cells, added: added };
+}
+
+/**
+ * Строка для таймера или строки трекера, которой нет в расписании: в её раздел (столбец A — название раздела,
+ * конец раздела — строка «Всего …»). Сначала занимается пустая строка раздела, иначе вставляется новая
+ * над последней строкой раздела, а формула итога расширяется на неё. Нет такого раздела — в «Личное».
+ */
+function addScheduleRow(sh, all, label, section) {
+  const width = Math.max(sh.getLastColumn(), 3);
+  const block = function (name) {
+    const k = normName(name);
+    let s = -1, t = -1;
+    for (let i = 0; i < all.length && s < 0; i++) if (k && normName(all[i][0]) === k) s = i;
+    if (s < 0) return null;
+    for (let i = s; i < all.length; i++) if (/^всего/.test(normName(all[i][1]))) { t = i; break; }
+    return t < 0 ? null : { s: s, t: t };
+  };
+  const b = block(section) || block('Личное');
+  if (!b) { // разделов нет — в конец листа
+    const at = all.length + 1;
+    sh.getRange(at, 2).setValue(label);
+    sh.getRange(at, 3, 1, width - 2).setNumberFormat('[h]:mm');
+    return;
+  }
+  for (let i = b.s; i < b.t; i++) { // свободная строка раздела
+    const r = all[i];
+    if (!String(r[1] == null ? '' : r[1]).trim() && r.slice(2).every(function (v) { return v === '' || v == null; })) {
+      sh.getRange(i + 1, 2).setValue(label);
+      sh.getRange(i + 1, 3, 1, width - 2).setNumberFormat('[h]:mm');
+      return;
+    }
+  }
+  const n = b.t; // 1-based номер строки над итогом; новая строка встаёт на её место
+  sh.insertRowBefore(n);
+  const nr = sh.getRange(n, 1, 1, width);
+  nr.clearContent(); nr.clearDataValidations();
+  sh.getRange(n, 3, 1, width - 2).setNumberFormat('[h]:mm');
+  sh.getRange(n, 2).setValue(label);
+  const tr = sh.getRange(b.t + 2, 3, 1, width - 2), f = tr.getFormulas()[0];
+  if (f.some(function (x) { return x; })) {
+    tr.setFormulas([f.map(function (x) {
+      return x ? x.replace(/(\$?[A-Z]{1,3}\$?)(\d+):(\$?[A-Z]{1,3}\$?)(\d+)/g, function (m, a, r1, c, r2) { return a + r1 + ':' + c + (Number(r2) < n ? n : r2); }) : x;
+    })]);
+  }
+}
+
+/** Запустить вручную один раз: даст доступ к таблицам расписания и заполнит всё накопленное время. */
+function exportAll() {
+  const r = exportSchedule(SpreadsheetApp.getActiveSpreadsheet(), null);
+  Logger.log(JSON.stringify(r));
+  return r;
 }
 
 /** Запустить один раз вручную: листы + ежедневная резервная копия. */
