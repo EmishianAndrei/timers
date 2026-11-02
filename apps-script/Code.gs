@@ -327,7 +327,11 @@ function scheduleRows(ss) {
     if (m > 0) r.auto[d] = (r.auto[d] || 0) + m;
   });
   const prods = {};
-  tableOf(ss, 'recipes').forEach(function (r) { if (String(r.kind) === 'product') prods['П' + Number(r.num)] = String(r.short || r.name); });
+  tableOf(ss, 'recipes').forEach(function (r) {
+    if (String(r.kind) !== 'product') return;
+    const unit = normName(r.unit), pack = Number(String(r.pack).replace(',', '.'));
+    prods['П' + Number(r.num)] = { name: String(r.short || r.name), ml: unit === 'мл' ? pack : unit === 'л' ? pack * 1000 : NaN };
+  });
   tableOf(ss, 'entries').forEach(function (x) {
     const r = byItem[String(x.itemId)]; if (!r) return;
     const d = plain(x.date, tz), raw = plain(x.value, tz);
@@ -349,8 +353,16 @@ function cellValue(type, raw, prods) {
   if (type === 'number' || type === 'choice') { const n = Number(raw.replace(',', '.')); return isNaN(n) ? { t: 'text', s: raw } : { t: 'num', n: n }; }
   if (type === 'product') {
     if (!isNaN(Number(raw.replace(',', '.')))) return { t: 'num', n: Number(raw.replace(',', '.')) }; // старые записи — литры
-    const names = raw.split(',').map(function (c) { c = c.trim(); const key = 'П' + c.replace(/^[пПpP]/, ''); return prods[key] || c; }).filter(Boolean);
-    return names.length ? { t: 'text', s: names.join(', ') } : null;
+    // энергетики: объём в литрах (как в таблице) + какие именно — в примечании к клетке
+    let ml = 0, known = true;
+    const names = raw.split(',').map(function (c) {
+      c = c.trim(); if (!c) return '';
+      const p = prods['П' + c.replace(/^[пПpP]/, '')];
+      if (!p || isNaN(p.ml)) known = false; else ml += p.ml;
+      return p ? p.name + (isNaN(p.ml) ? '' : ' — ' + p.ml + ' мл') : c;
+    }).filter(Boolean);
+    if (!names.length) return null;
+    return { t: 'prod', liters: known ? Math.round(ml) / 1000 : NaN, s: names.map(function (x) { return x.split(' — ')[0]; }).join(', '), note: names.join('\n') };
   }
   return { t: 'text', s: raw };
 }
@@ -378,7 +390,7 @@ function exportSchedule(ss, target) {
   const want = target.days ? target.days.reduce(function (o, d) { o[d] = 1; return o; }, {}) : null;
   const clear = target.clear || {};
   let cells = 0;
-  const added = [];
+  const added = [], skipped = [];
   ids.forEach(function (id) {
     const book = SpreadsheetApp.openById(id), sh = book.getSheetByName(SCHEDULE_TAB);
     if (!sh) return;
@@ -399,8 +411,19 @@ function exportSchedule(ss, target) {
       added.push(r.label);
       all = sh.getDataRange().getValues(); idx = index();
     });
-    const rng = sh.getDataRange(), shown = rng.getDisplayValues(), formulas = rng.getFormulas();
-    const at = function (i, j) { return { shown: (shown[i] || [])[j] || '', formula: (formulas[i] || [])[j] || '' }; };
+    const rng = sh.getDataRange(), shown = rng.getDisplayValues(), formulas = rng.getFormulas(), notes = rng.getNotes(), rules = rng.getDataValidations();
+    const at = function (i, j) { return { shown: (shown[i] || [])[j] || '', formula: (formulas[i] || [])[j] || '', note: (notes[i] || [])[j] || '' }; };
+    /** значения выпадающего списка клетки (если он есть) */
+    const listOf = function (i, j) {
+      const dv = (rules[i] || [])[j];
+      if (!dv || dv.getCriteriaType() !== SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) return null;
+      return (dv.getCriteriaValues()[0] || []).map(String);
+    };
+    /** каждая запись отдельно: если таблица что-то отклонит (например, выпадающий список), остальное запишется */
+    const write = function (label, fn) {
+      try { fn(); SpreadsheetApp.flush(); cells++; }
+      catch (err) { skipped.push(label + ': ' + String(err && err.message || err).slice(0, 120)); }
+    };
     Object.keys(rows).forEach(function (k) {
       if (!(k in idx)) return;
       const i = idx[k], r = rows[k];
@@ -408,29 +431,40 @@ function exportSchedule(ss, target) {
         const j = cols[d], c = at(i, j);
         if (c.formula) return; // формулы не трогаем
         const cellRange = function () { return sh.getRange(i + 1, j + 1); };
+        const where = r.label + ' ' + d;
         if (r.kind === 'dur') {
           const m = Math.round(minutesOn(r, d));
           if (hmToMin(c.shown) === m) return;
-          if (m > 0) cellRange().setNumberFormat('[h]:mm').setValue(m / 1440); else cellRange().clearContent();
-          cells++;
+          write(where, function () { if (m > 0) cellRange().setNumberFormat('[h]:mm').setValue(m / 1440); else cellRange().clearContent(); });
           return;
         }
         const v = r.vals[d];
         if (!v) {
           // сняли отметку на сайте — очищаем клетку; иначе не трогаем то, что вписано руками
           const ids2 = Object.keys(data.byItem).filter(function (iid) { return data.byItem[iid] === r && clear[d + '|' + iid]; });
-          if (ids2.length && c.shown !== '' && c.shown !== 'FALSE') { cellRange().clearContent(); cells++; }
+          if (ids2.length && ((c.shown !== '' && c.shown !== 'FALSE') || c.note)) write(where, function () { cellRange().clearContent(); if (c.note) cellRange().setNote(''); });
           return;
         }
-        if (v.t === 'bool') { if (c.shown === 'TRUE') return; cellRange().setValue(true); }
-        else if (v.t === 'time') { if (hmToMin(c.shown) === v.m) return; cellRange().setNumberFormat('h:mm').setValue(v.m / 1440); }
-        else if (v.t === 'num') { if (numOf(c.shown) === v.n) return; cellRange().setValue(v.n); }
-        else { if (c.shown === v.s) return; cellRange().setValue(/^[=+\-@]/.test(v.s) ? "'" + v.s : v.s); }
-        cells++;
+        if (v.t === 'bool') { if (c.shown !== 'TRUE') write(where, function () { cellRange().setValue(true); }); }
+        else if (v.t === 'time') { if (hmToMin(c.shown) !== v.m) write(where, function () { cellRange().setNumberFormat('h:mm').setValue(v.m / 1440); }); }
+        else if (v.t === 'num') { if (numOf(c.shown) !== v.n) write(where, function () { cellRange().setValue(v.n); }); }
+        else if (v.t === 'prod') {
+          const list = listOf(i, j);
+          let num = v.liters;
+          if (list && !isNaN(num)) { // подбираем значение из выпадающего списка (449 мл → 0,45)
+            const hit = list.map(numOf).filter(function (n) { return !isNaN(n) && Math.abs(n - v.liters) <= 0.006; })[0];
+            num = hit === undefined ? NaN : hit;
+          }
+          if (!isNaN(num)) { if (numOf(c.shown) !== num) write(where, function () { cellRange().setValue(num); }); }
+          else if (!list) { if (c.shown !== v.s) write(where, function () { cellRange().setValue(v.s); }); }
+          else if (!isNaN(v.liters)) skipped.push(where + ': ' + String(v.liters).replace('.', ',') + ' л нет в выпадающем списке клетки — записано только примечание');
+          if (c.note !== v.note) write(where + ' (примечание)', function () { cellRange().setNote(v.note); });
+        }
+        else { if (c.shown !== v.s) write(where, function () { cellRange().setValue(/^[=+\-@]/.test(v.s) ? "'" + v.s : v.s); }); }
       });
     });
   });
-  return { sheets: ids.length, cells: cells, added: added };
+  return { sheets: ids.length, cells: cells, added: added, skipped: skipped };
 }
 
 /**

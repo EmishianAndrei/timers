@@ -224,7 +224,7 @@ const afterSync = [];
 let lastExport = null;
 function noteExport(j) {
   const was = lastExport && lastExport.error;
-  lastExport = {at: Date.now(), error: j.exportError || "", cells: j.exported ? j.exported.cells : 0, added: j.exported ? j.exported.added || [] : []};
+  lastExport = {at: Date.now(), error: j.exportError || "", cells: j.exported ? j.exported.cells : 0, added: j.exported ? j.exported.added || [] : [], skipped: j.exported ? j.exported.skipped || [] : []};
   if (lastExport.error && !was) toast("Время не попало в расписание: " + lastExport.error, 7000);
   if (lastExport.added.length) toast("В расписание добавлены строки: " + lastExport.added.join(", "), 6000);
 }

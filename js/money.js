@@ -169,7 +169,8 @@ function scheduleHtml() {
   const links = setting("scheduleSheets", "");
   const st = !lastExport ? "" : lastExport.error
     ? `<div class="neg small">Последняя выгрузка не удалась: ${esc(lastExport.error)}. Если это «нет доступа» — в Apps Script один раз выберите функцию exportAll и нажмите «Выполнить».</div>`
-    : `<div class="small muted">Выгружено ${new Date(lastExport.at).toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit"})}${lastExport.cells ? ", изменено ячеек: " + lastExport.cells : ", без изменений"}.</div>`;
+    : `<div class="small muted">Выгружено ${new Date(lastExport.at).toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit"})}${lastExport.cells ? ", изменено ячеек: " + lastExport.cells : ", без изменений"}.</div>
+      ${lastExport.skipped.length ? `<details class="small"><summary class="muted">Не записано: ${lastExport.skipped.length}</summary>${lastExport.skipped.map(x => `<div class="muted">${esc(x)}</div>`).join("")}</details>` : ""}`;
   return `<section class="panel"><h3>Расписание месяца</h3>
     <p class="small muted">Всё, что отмечено в трекере, само попадает на лист Main этих таблиц — в строку с тем же названием: время таймеров (ч:мм), галочки, отбой и подъём, время приёмов пищи, какие энергетики, шаги и т. д. Таймер, привязанный к строке трекера, пишется в её строку, остальные — в строку с названием таймера (если её нет, она появится в своём разделе). То, что вписано в таблицу руками, не стирается — клетка очищается, только если снять отметку на сайте. Новый месяц — добавьте ссылку на новую таблицу с новой строки.</p>
     <textarea data-chg="scheduleSheets" rows="2" placeholder="https://docs.google.com/spreadsheets/d/…" aria-label="Ссылки на таблицы расписания">${esc(links)}</textarea>
