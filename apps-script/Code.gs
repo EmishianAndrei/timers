@@ -13,8 +13,9 @@
  * После правки кода: «Начать развёртывание» → «Управление развёртываниями» → карандаш →
  * Версия: «Новая версия» → «Начать развёртывание». URL при этом не меняется.
  *
- * Расписание месяца: время таймеров и строк «время» из трекера само попадает на лист Main таблиц
- * из настройки scheduleSheets (ссылки на «Расписание Ноябрь» и т. п.) — в формате ч:мм.
+ * Расписание месяца: всё, что отмечено в трекере сайта (время таймеров в ч:мм, галочки, отбой и подъём,
+ * приёмы пищи, энергетики, шаги…), само попадает на лист Main таблиц из настройки scheduleSheets
+ * (ссылки на «Расписание Ноябрь» и т. п.) — в строку с тем же названием.
  * Один раз после установки выберите функцию exportAll и нажмите «Выполнить»: она попросит доступ
  * к таблицам расписания и заполнит уже накопленное время.
  */
@@ -64,7 +65,7 @@ function doPost(e) {
   if (lock && !lock.tryLock(25000)) return out({ ok: false, error: 'busy' });
   let res, target = false;
   try {
-    if (hasOps) target = exportDates(ss, req.ops); // какие дни расписания затронуты (смотрим до записи)
+    if (hasOps) target = exportTargets(req.ops); // какие дни расписания затронуты
     const applied = hasOps ? applyOps(ss, req.ops) : 0;
     res = { ok: true, applied: applied, time: Date.now(), version: VERSION };
     if (req.pull) res.data = readAll(ss);
@@ -74,8 +75,8 @@ function doPost(e) {
   } finally {
     if (lock) lock.releaseLock();
   }
-  // Время → таблица расписания месяца. Ошибка здесь не ломает синхронизацию.
-  if (req.exportAll) target = null;
+  // Трекер → таблица расписания месяца. Ошибка здесь не ломает синхронизацию.
+  if (req.exportAll) target = { days: null, clear: {} };
   if (target !== false) {
     try { res.exported = exportSchedule(ss, target); }
     catch (err) { res.exportError = String(err && err.message || err); }
@@ -271,53 +272,88 @@ function tableOf(ss, name) {
   return list;
 }
 
-/** Какие дни пересчитать: Set дат, null — все, false — ничего (галочки и прочее расписание не трогают). */
-function exportDates(ss, ops) {
-  const rel = ops.filter(function (o) { return o && (o.c === 'sessions' || o.c === 'entries'); });
-  if (!rel.length) return false;
-  let dur = null;
-  const days = {};
+/**
+ * Что пересчитать в расписании: false — ничего; {days: [...] | null (все), clear: {"дата|itemId": 1}}.
+ * clear — отметки, которые сняли на сайте: только их клетки очищаются (кроме строк времени таймеров),
+ * поэтому то, что вписано в таблицу руками, не стирается.
+ */
+function exportTargets(ops) {
+  const days = {}, clear = {};
   let any = false;
-  for (let k = 0; k < rel.length; k++) {
-    const o = rel[k];
+  for (let k = 0; k < ops.length; k++) {
+    const o = ops[k];
+    if (!o || (o.c !== 'sessions' && o.c !== 'entries')) continue;
     if (o.c === 'sessions') {
-      if (o.op === 'del' || !o.r || !o.r.date) return null; // дата удалённой сессии неизвестна — пересчитаем всё
+      if (o.op === 'del' || !o.r || !o.r.date) return { days: null, clear: clear }; // дата удалённой сессии неизвестна — пересчитаем всё
       days[String(o.r.date)] = 1; any = true;
     } else {
-      if (!dur) { dur = {}; tableOf(ss, 'items').forEach(function (it) { if (String(it.type) === 'duration') dur[String(it.id)] = 1; }); }
       const id = o.op === 'del' ? String(o.id || '') : String(o.r && o.r.id || '');
       const parts = id.split('|');
-      if (parts.length === 2 && dur[parts[1]]) { days[parts[0]] = 1; any = true; }
+      if (parts.length !== 2) continue;
+      days[parts[0]] = 1; any = true;
+      if (o.op === 'del') clear[id] = 1;
     }
   }
-  return any ? Object.keys(days) : false;
+  return any ? { days: Object.keys(days), clear: clear } : false;
 }
 
-/** Минуты по строкам: таймер, привязанный к строке трекера, — в эту строку, иначе — в строку с названием таймера.
- *  Если время строки вписано на сайте вручную, берётся оно (как в трекере). */
-function scheduleMinutes(ss) {
+/**
+ * Значения для расписания по строкам (ключ — название строки).
+ *  dur — время: таймер, привязанный к строке трекера, идёт в эту строку, иначе — в строку с названием таймера;
+ *        если время вписано на сайте вручную, берётся оно (как в трекере);
+ *  val — остальные строки трекера: галочки, время суток, приёмы пищи (время), энергетики (названия), числа, текст.
+ */
+function scheduleRows(ss) {
   const tz = ss.getSpreadsheetTimeZone();
-  const dur = {}, secName = {};
+  const secName = {}, dur = {}, byItem = {}, rows = {};
   tableOf(ss, 'sections').forEach(function (x) { secName[String(x.id)] = String(x.name || ''); });
-  tableOf(ss, 'items').forEach(function (it) { if (String(it.type) === 'duration') dur[String(it.id)] = it; });
-  const rows = {};
-  const row = function (label, section) { const k = normName(label); if (!k) return null; return rows[k] = rows[k] || { label: String(label).trim(), section: section || 'Личное', auto: {}, manual: {} }; };
-  Object.keys(dur).forEach(function (id) { row(dur[id].name, secName[String(dur[id].sectionId)]); });
+  const items = tableOf(ss, 'items');
+  items.forEach(function (it) { if (String(it.type) === 'duration') dur[String(it.id)] = it; });
+  const row = function (label, section, kind, type) {
+    const k = normName(label); if (!k) return null;
+    return rows[k] = rows[k] || { label: String(label).trim(), section: section || 'Личное', kind: kind, type: type, auto: {}, manual: {}, vals: {} };
+  };
+  Object.keys(dur).forEach(function (id) { byItem[id] = row(dur[id].name, secName[String(dur[id].sectionId)], 'dur', 'duration'); });
+  items.forEach(function (it) {
+    const ty = String(it.type);
+    if (ty === 'duration' || ty === 'computed') return; // длительность сна в таблице считает формула
+    byItem[String(it.id)] = row(it.name, secName[String(it.sectionId)], 'val', ty);
+  });
   const byTimer = {};
-  tableOf(ss, 'timers').forEach(function (t) { const it = dur[String(t.itemId)]; byTimer[String(t.id)] = it ? row(it.name) : row(t.name, 'Личное'); });
+  tableOf(ss, 'timers').forEach(function (t) { const it = dur[String(t.itemId)]; byTimer[String(t.id)] = it ? byItem[String(it.id)] : row(t.name, 'Личное', 'dur', 'duration'); });
   tableOf(ss, 'sessions').forEach(function (x) {
-    const r = byTimer[String(x.timerId)]; if (!r) return;
+    const r = byTimer[String(x.timerId)]; if (!r || r.kind !== 'dur') return;
     const m = (Number(x.end) - Number(x.start)) / 60000, d = plain(x.date, tz);
     if (m > 0) r.auto[d] = (r.auto[d] || 0) + m;
   });
+  const prods = {};
+  tableOf(ss, 'recipes').forEach(function (r) { if (String(r.kind) === 'product') prods['П' + Number(r.num)] = String(r.short || r.name); });
   tableOf(ss, 'entries').forEach(function (x) {
-    const it = dur[String(x.itemId)]; if (!it) return;
-    const v = String(x.value).replace(',', '.');
-    if (v !== '' && !isNaN(Number(v))) row(it.name).manual[plain(x.date, tz)] = Number(v);
+    const r = byItem[String(x.itemId)]; if (!r) return;
+    const d = plain(x.date, tz), raw = plain(x.value, tz);
+    if (r.kind === 'dur') { const v = raw.replace(',', '.'); if (v !== '' && !isNaN(Number(v))) r.manual[d] = Number(v); return; }
+    const v = cellValue(r.type, raw, prods);
+    if (v) r.vals[d] = v;
   });
-  return rows;
+  return { rows: rows, byItem: byItem };
 }
 function minutesOn(r, d) { return d in r.manual ? r.manual[d] : (r.auto[d] || 0); }
+
+/** Значение строки трекера → что писать в клетку. null — писать нечего. */
+function cellValue(type, raw, prods) {
+  raw = String(raw == null ? '' : raw).trim();
+  if (!raw) return null;
+  if (type === 'check') return raw === 'TRUE' ? { t: 'bool' } : null;
+  if (type === 'time') { const m = hmToMin(raw); return isNaN(m) ? { t: 'text', s: raw } : { t: 'time', m: m }; }
+  if (type === 'meal') { const tm = hmToMin(raw.split('|')[1] || ''); return tm > 0 || (raw.split('|')[1] || '') === '00:00' ? { t: 'time', m: tm } : null; }
+  if (type === 'number' || type === 'choice') { const n = Number(raw.replace(',', '.')); return isNaN(n) ? { t: 'text', s: raw } : { t: 'num', n: n }; }
+  if (type === 'product') {
+    if (!isNaN(Number(raw.replace(',', '.')))) return { t: 'num', n: Number(raw.replace(',', '.')) }; // старые записи — литры
+    const names = raw.split(',').map(function (c) { c = c.trim(); const key = 'П' + c.replace(/^[пПpP]/, ''); return prods[key] || c; }).filter(Boolean);
+    return names.length ? { t: 'text', s: names.join(', ') } : null;
+  }
+  return { t: 'text', s: raw };
+}
 
 /** «1:30» → 90, пусто → 0, иное → NaN */
 function hmToMin(s) {
@@ -326,19 +362,23 @@ function hmToMin(s) {
   const m = /^(\d+):(\d\d)(?::\d\d)?$/.exec(s);
   return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
 }
+function numOf(s) { const n = Number(String(s).replace(/[\s ]/g, '').replace(',', '.')); return String(s).trim() === '' ? NaN : n; }
 function dateKey(v, tz) {
   if (v instanceof Date) return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
   if (typeof v === 'number' && v > 30000) return Utilities.formatDate(new Date(Math.round((v - 25569) * 864e5)), 'UTC', 'yyyy-MM-dd');
   return '';
 }
 
-/** Пишет время в таблицы расписания. days — массив дат или null (все даты листа). */
-function exportSchedule(ss, days) {
+/** Пишет данные трекера в таблицы расписания. target: {days: [...] | null, clear: {...}}. */
+function exportSchedule(ss, target) {
+  target = target || { days: null, clear: {} };
   const ids = scheduleIds(ss);
   if (!ids.length) return { sheets: 0, cells: 0 };
-  const rows = scheduleMinutes(ss);
-  const want = days ? days.reduce(function (o, d) { o[d] = 1; return o; }, {}) : null;
-  let cells = 0, added = [];
+  const data = scheduleRows(ss), rows = data.rows;
+  const want = target.days ? target.days.reduce(function (o, d) { o[d] = 1; return o; }, {}) : null;
+  const clear = target.clear || {};
+  let cells = 0;
+  const added = [];
   ids.forEach(function (id) {
     const book = SpreadsheetApp.openById(id), sh = book.getSheetByName(SCHEDULE_TAB);
     if (!sh) return;
@@ -350,22 +390,42 @@ function exportSchedule(ss, days) {
     if (!dlist.length) return;
     const index = function () { const m = {}; all.forEach(function (r, i) { const k = normName(r[1]); if (k && !(k in m)) m[k] = i; }); return m; };
     let idx = index();
+    // новые строки — только для времени таймеров (остальные строки ты сам решаешь, держать ли в таблице)
     Object.keys(rows).forEach(function (k) {
-      if (k in idx) return;
-      if (!dlist.some(function (d) { return Math.round(minutesOn(rows[k], d)) > 0; })) return;
-      addScheduleRow(sh, all, rows[k].label, rows[k].section);
-      added.push(rows[k].label);
+      const r = rows[k];
+      if (k in idx || r.kind !== 'dur') return;
+      if (!dlist.some(function (d) { return Math.round(minutesOn(r, d)) > 0; })) return;
+      addScheduleRow(sh, all, r.label, r.section);
+      added.push(r.label);
       all = sh.getDataRange().getValues(); idx = index();
     });
-    const shown = sh.getDataRange().getDisplayValues();
+    const rng = sh.getDataRange(), shown = rng.getDisplayValues(), formulas = rng.getFormulas();
+    const at = function (i, j) { return { shown: (shown[i] || [])[j] || '', formula: (formulas[i] || [])[j] || '' }; };
     Object.keys(rows).forEach(function (k) {
       if (!(k in idx)) return;
-      const i = idx[k];
+      const i = idx[k], r = rows[k];
       dlist.forEach(function (d) {
-        const m = Math.round(minutesOn(rows[k], d)), j = cols[d];
-        if (hmToMin(shown[i][j]) === m) return; // уже так
-        const c = sh.getRange(i + 1, j + 1);
-        if (m > 0) c.setNumberFormat('[h]:mm').setValue(m / 1440); else c.clearContent();
+        const j = cols[d], c = at(i, j);
+        if (c.formula) return; // формулы не трогаем
+        const cellRange = function () { return sh.getRange(i + 1, j + 1); };
+        if (r.kind === 'dur') {
+          const m = Math.round(minutesOn(r, d));
+          if (hmToMin(c.shown) === m) return;
+          if (m > 0) cellRange().setNumberFormat('[h]:mm').setValue(m / 1440); else cellRange().clearContent();
+          cells++;
+          return;
+        }
+        const v = r.vals[d];
+        if (!v) {
+          // сняли отметку на сайте — очищаем клетку; иначе не трогаем то, что вписано руками
+          const ids2 = Object.keys(data.byItem).filter(function (iid) { return data.byItem[iid] === r && clear[d + '|' + iid]; });
+          if (ids2.length && c.shown !== '' && c.shown !== 'FALSE') { cellRange().clearContent(); cells++; }
+          return;
+        }
+        if (v.t === 'bool') { if (c.shown === 'TRUE') return; cellRange().setValue(true); }
+        else if (v.t === 'time') { if (hmToMin(c.shown) === v.m) return; cellRange().setNumberFormat('h:mm').setValue(v.m / 1440); }
+        else if (v.t === 'num') { if (numOf(c.shown) === v.n) return; cellRange().setValue(v.n); }
+        else { if (c.shown === v.s) return; cellRange().setValue(/^[=+\-@]/.test(v.s) ? "'" + v.s : v.s); }
         cells++;
       });
     });
@@ -419,7 +479,7 @@ function addScheduleRow(sh, all, label, section) {
 
 /** Запустить вручную один раз: даст доступ к таблицам расписания и заполнит всё накопленное время. */
 function exportAll() {
-  const r = exportSchedule(SpreadsheetApp.getActiveSpreadsheet(), null);
+  const r = exportSchedule(SpreadsheetApp.getActiveSpreadsheet(), { days: null, clear: {} });
   Logger.log(JSON.stringify(r));
   return r;
 }
