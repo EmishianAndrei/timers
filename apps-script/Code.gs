@@ -353,16 +353,9 @@ function cellValue(type, raw, prods) {
   if (type === 'number' || type === 'choice') { const n = Number(raw.replace(',', '.')); return isNaN(n) ? { t: 'text', s: raw } : { t: 'num', n: n }; }
   if (type === 'product') {
     if (!isNaN(Number(raw.replace(',', '.')))) return { t: 'num', n: Number(raw.replace(',', '.')) }; // старые записи — литры
-    // энергетики: объём в литрах (как в таблице) + какие именно — в примечании к клетке
-    let ml = 0, known = true;
-    const names = raw.split(',').map(function (c) {
-      c = c.trim(); if (!c) return '';
-      const p = prods['П' + c.replace(/^[пПpP]/, '')];
-      if (!p || isNaN(p.ml)) known = false; else ml += p.ml;
-      return p ? p.name + (isNaN(p.ml) ? '' : ' — ' + p.ml + ' мл') : c;
-    }).filter(Boolean);
-    if (!names.length) return null;
-    return { t: 'prod', liters: known ? Math.round(ml) / 1000 : NaN, s: names.map(function (x) { return x.split(' — ')[0]; }).join(', '), note: names.join('\n') };
+    // энергетики и другие продукты — короткими названиями: «Burn оригинал б/с, Red Bull б/с»
+    const names = raw.split(',').map(function (c) { c = c.trim(); if (!c) return ''; const p = prods['П' + c.replace(/^[пПpP]/, '')]; return p ? p.name : c; }).filter(Boolean);
+    return names.length ? { t: 'text', s: names.join(', ') } : null;
   }
   return { t: 'text', s: raw };
 }
@@ -411,14 +404,8 @@ function exportSchedule(ss, target) {
       added.push(r.label);
       all = sh.getDataRange().getValues(); idx = index();
     });
-    const rng = sh.getDataRange(), shown = rng.getDisplayValues(), formulas = rng.getFormulas(), notes = rng.getNotes(), rules = rng.getDataValidations();
+    const rng = sh.getDataRange(), shown = rng.getDisplayValues(), formulas = rng.getFormulas(), notes = rng.getNotes();
     const at = function (i, j) { return { shown: (shown[i] || [])[j] || '', formula: (formulas[i] || [])[j] || '', note: (notes[i] || [])[j] || '' }; };
-    /** значения выпадающего списка клетки (если он есть) */
-    const listOf = function (i, j) {
-      const dv = (rules[i] || [])[j];
-      if (!dv || dv.getCriteriaType() !== SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) return null;
-      return (dv.getCriteriaValues()[0] || []).map(String);
-    };
     /** каждая запись отдельно: если таблица что-то отклонит (например, выпадающий список), остальное запишется */
     const write = function (label, fn) {
       try { fn(); SpreadsheetApp.flush(); cells++; }
@@ -448,19 +435,10 @@ function exportSchedule(ss, target) {
         if (v.t === 'bool') { if (c.shown !== 'TRUE') write(where, function () { cellRange().setValue(true); }); }
         else if (v.t === 'time') { if (hmToMin(c.shown) !== v.m) write(where, function () { cellRange().setNumberFormat('h:mm').setValue(v.m / 1440); }); }
         else if (v.t === 'num') { if (numOf(c.shown) !== v.n) write(where, function () { cellRange().setValue(v.n); }); }
-        else if (v.t === 'prod') {
-          const list = listOf(i, j);
-          let num = v.liters;
-          if (list && !isNaN(num)) { // подбираем значение из выпадающего списка (449 мл → 0,45)
-            const hit = list.map(numOf).filter(function (n) { return !isNaN(n) && Math.abs(n - v.liters) <= 0.006; })[0];
-            num = hit === undefined ? NaN : hit;
-          }
-          if (!isNaN(num)) { if (numOf(c.shown) !== num) write(where, function () { cellRange().setValue(num); }); }
-          else if (!list) { if (c.shown !== v.s) write(where, function () { cellRange().setValue(v.s); }); }
-          else if (!isNaN(v.liters)) skipped.push(where + ': ' + String(v.liters).replace('.', ',') + ' л нет в выпадающем списке клетки — записано только примечание');
-          if (c.note !== v.note) write(where + ' (примечание)', function () { cellRange().setNote(v.note); });
+        else {
+          if (c.shown !== v.s) write(where, function () { cellRange().setValue(/^[=+\-@]/.test(v.s) ? "'" + v.s : v.s); });
+          if (c.note) write(where + ' (примечание)', function () { cellRange().setNote(''); }); // старое примечание с объёмом
         }
-        else { if (c.shown !== v.s) write(where, function () { cellRange().setValue(/^[=+\-@]/.test(v.s) ? "'" + v.s : v.s); }); }
       });
     });
   });
