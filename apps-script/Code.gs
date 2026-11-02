@@ -23,7 +23,7 @@
 const SECRET = 'ВСТАВЬТЕ_СВОЙ_КЛЮЧ';
 const BACKUP_FOLDER = 'Трекер — резервные копии';
 const BACKUP_KEEP = 30;
-const VERSION = 6; // сайт проверяет версию и подсказывает, если скрипт пора обновить
+const VERSION = 7; // сайт проверяет версию и подсказывает, если скрипт пора обновить
 
 // Листы базы и их столбцы (как SCHEMA в js/core.js). Новые столбцы и листы создаются сами при первой записи.
 const SCHEMA = {
@@ -451,9 +451,9 @@ function exportSchedule(ss, target) {
 }
 
 /**
- * Строки дел из таблицы расписания: разделы, которые заканчиваются строкой «Всего …» (Личное, НИУ ВШЭ…),
- * без итогов и без строк-галочек. Берётся таблица, в которой есть сегодняшний день (иначе — последняя в списке).
- * {sheet, from, to, sections: [{name, rows: [...]}]}
+ * Раскладка листа Main таблицы расписания — сайт по ней сам решает, какие строки считать делами (куда пишется время).
+ * Берётся таблица, в которой есть сегодняшний день (иначе — последняя в списке).
+ * {sheet, from, to, rows: [{a: раздел (столбец A), b: строка (столбец B), check: галочка, formula: формула}]}
  */
 function scheduleStructure(ss) {
   const ids = scheduleIds(ss);
@@ -472,25 +472,20 @@ function scheduleStructure(ss) {
   pick = pick || fallback;
   if (!pick) return null;
   const all = pick.all, n = all.length;
-  const checks = n > 0 ? pick.sh.getRange(1, 3, n, 1).getDataValidations().map(function (r) {
-    const dv = r[0]; return !!dv && dv.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.CHECKBOX;
-  }) : [];
-  const sections = [];
-  let cur = null;
+  const col = n > 0 ? pick.sh.getRange(1, 3, n, 1) : null;
+  const dv = col ? col.getDataValidations() : [], fx = col ? col.getFormulas() : [];
+  const rows = [];
   for (let i = 2; i < n; i++) {
     const a = String(all[i][0] == null ? '' : all[i][0]).trim(), b = String(all[i][1] == null ? '' : all[i][1]).trim();
-    if (a) cur = { name: a, rows: [], closed: false };
-    if (!cur || !b) continue;
-    const nb = normName(b);
-    if (/^всего/.test(nb)) { // итог раздела — «Всего ЛИЧНОЕ» закрывает «Личное»; «Всего за день» разделом не считается
-      if (!cur.closed && nb.indexOf(normName(cur.name)) >= 0) { cur.closed = true; if (cur.rows.length) sections.push({ name: cur.name, rows: cur.rows }); }
-      continue;
-    }
-    if (cur.closed) continue;
-    const isCheck = checks[i] || all[i].slice(2).some(function (v) { return v === true || v === false; });
-    if (!isCheck) cur.rows.push(b);
+    if (!a && !b) continue;
+    const v = dv[i] && dv[i][0];
+    rows.push({
+      a: a, b: b,
+      check: (!!v && v.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.CHECKBOX) || all[i].slice(2).some(function (x) { return x === true || x === false; }),
+      formula: !!(fx[i] && fx[i][0]),
+    });
   }
-  return { sheet: pick.id, from: pick.from, to: pick.to, sections: sections };
+  return { sheet: pick.id, from: pick.from, to: pick.to, rows: rows };
 }
 
 /**

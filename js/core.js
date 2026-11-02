@@ -158,7 +158,7 @@ function moveIn(c, list, id, n) {
 }
 
 // ---------- синхронизация ----------
-const NEED_SCRIPT = 6; let scriptVersion = 0;
+const NEED_SCRIPT = 7; let scriptVersion = 0;
 let syncing = false, syncT = null, syncState = "off", syncMsg = "";
 function syncLabel() {
   const pending = S.outbox.length;

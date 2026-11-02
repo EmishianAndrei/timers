@@ -1,6 +1,8 @@
 "use strict";
 /*
- * Строки дел (тип «время») берутся из таблицы «Расписание <месяц>»: разделы, которые заканчиваются строкой «Всего …».
+ * Строки дел (тип «время») берутся из столбца B таблицы «Расписание <месяц>»: каждая строка внутри раздела
+ * (раздел — название в столбце A), кроме галочек, формул, строк «Всего …» и строк, которые на сайте записаны
+ * иначе (отбой, кофеин, энергетики, шаги, приёмы пищи…).
  * Добавил строку в таблицу — она появляется на сайте (в трекере и в списке «Записывать время в строку трекера»);
  * убрал — строка на сайте скрывается с сегодняшнего дня (записи остаются); порядок — как в таблице.
  */
@@ -8,16 +10,35 @@ let schedAt = 0;
 const wantSchedule = force => !!(S.cfg.url && setting("scheduleSheets", "") && (force || Date.now() - schedAt > 10 * 60000));
 const nm = s => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 
+/** разделы и строки дел из раскладки листа */
+function sheetSections(sch) {
+  if (Array.isArray(sch.sections)) return sch.sections; // скрипт версии 6
+  const other = new Set(items().filter(i => i.type !== "duration").map(i => nm(i.name)));
+  const out = [], seen = new Set();
+  let cur = null;
+  for (const r of sch.rows || []) {
+    if (r.a) { cur = {name: r.a, rows: []}; out.push(cur); }
+    if (!cur || !r.b) continue;
+    const k = nm(r.b);
+    if (/^всего/.test(k) || r.check || r.formula || other.has(k) || seen.has(k)) continue; // одно дело — одна строка (первая)
+    seen.add(k); cur.rows.push(r.b);
+  }
+  return out.filter(s => s.rows.length);
+}
+
 function applySchedule(sch) {
   schedAt = Date.now();
-  if (!sch || !Array.isArray(sch.sections)) return;
+  if (!sch) return;
+  sch = Object.assign({}, sch, {sections: sheetSections(sch)});
   const t0 = today(), covers = (!sch.from || sch.from <= t0) && (!sch.to || t0 <= sch.to);
   const durs = () => items().filter(i => i.type === "duration");
   let changed = 0;
   batch(() => {
+    let prevSec = null;
     for (const sec of sch.sections) {
       let s = sections().find(x => nm(x.name) === nm(sec.name));
-      if (!s) { s = put("sections", {id: uid(), name: sec.name, order: nextOrder(all("sections")), total: true}); changed++; }
+      if (!s) { s = put("sections", {id: uid(), name: sec.name, order: prevSec ? (prevSec.order ?? 0) + 0.5 : nextOrder(all("sections")), total: true}); changed++; }
+      prevSec = s;
       const names = new Set(sec.rows.map(nm));
       for (const label of sec.rows) {
         const ex = durs().find(i => nm(i.name) === nm(label));
