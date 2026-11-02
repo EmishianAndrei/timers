@@ -158,7 +158,7 @@ function moveIn(c, list, id, n) {
 }
 
 // ---------- синхронизация ----------
-const NEED_SCRIPT = 5; let scriptVersion = 0;
+const NEED_SCRIPT = 6; let scriptVersion = 0;
 let syncing = false, syncT = null, syncState = "off", syncMsg = "";
 function syncLabel() {
   const pending = S.outbox.length;
@@ -197,7 +197,8 @@ async function sync(manual, pull) {
   try {
     const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 45000);
     let res;
-    try { res = await fetch(S.cfg.url, {method: "POST", body: JSON.stringify({key: S.cfg.key, ops: ops.map(({seq, ...o}) => o), pull: doPull}), signal: ctl.signal}); }
+    const withSched = doPull && typeof wantSchedule === "function" && wantSchedule(manual);
+    try { res = await fetch(S.cfg.url, {method: "POST", body: JSON.stringify({key: S.cfg.key, ops: ops.map(({seq, ...o}) => o), pull: doPull, schedule: withSched}), signal: ctl.signal}); }
     catch (x) { throw x.name === "AbortError" ? new Error("База не ответила за 45 секунд, повторю позже.") : x; }
     finally { clearTimeout(to); }
     const txt = await res.text();
@@ -206,6 +207,7 @@ async function sync(manual, pull) {
     S.outbox = S.outbox.filter(o => !sent.has(o.seq));
     if (j.data) { merge(j.data); S.lastPull = Date.now(); }
     if (j.exported || j.exportError) noteExport(j);
+    if (withSched && "schedule" in j) applySchedule(j.schedule);
     scriptVersion = Number(j.version) || 1;
     if (String(setting("scriptVersion", "")) !== String(scriptVersion)) setSetting("scriptVersion", scriptVersion); // видно в таблице на листе settings
     S.lastSync = Date.now(); saveNow();

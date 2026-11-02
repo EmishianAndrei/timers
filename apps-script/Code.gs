@@ -23,7 +23,7 @@
 const SECRET = 'ВСТАВЬТЕ_СВОЙ_КЛЮЧ';
 const BACKUP_FOLDER = 'Трекер — резервные копии';
 const BACKUP_KEEP = 30;
-const VERSION = 5; // сайт проверяет версию и подсказывает, если скрипт пора обновить
+const VERSION = 6; // сайт проверяет версию и подсказывает, если скрипт пора обновить
 
 // Листы базы и их столбцы (как SCHEMA в js/core.js). Новые столбцы и листы создаются сами при первой записи.
 const SCHEMA = {
@@ -74,6 +74,11 @@ function doPost(e) {
     return out({ ok: false, error: 'server', message: String(err && err.message || err) });
   } finally {
     if (lock) lock.releaseLock();
+  }
+  // Разделы и строки дел из таблицы расписания — сайт по ним обновляет свои строки «время».
+  if (req.schedule) {
+    try { res.schedule = scheduleStructure(ss); }
+    catch (err) { res.scheduleError = String(err && err.message || err); }
   }
   // Трекер → таблица расписания месяца. Ошибка здесь не ломает синхронизацию.
   if (req.exportAll) target = { days: null, clear: {} };
@@ -443,6 +448,49 @@ function exportSchedule(ss, target) {
     });
   });
   return { sheets: ids.length, cells: cells, added: added, skipped: skipped };
+}
+
+/**
+ * Строки дел из таблицы расписания: разделы, которые заканчиваются строкой «Всего …» (Личное, НИУ ВШЭ…),
+ * без итогов и без строк-галочек. Берётся таблица, в которой есть сегодняшний день (иначе — последняя в списке).
+ * {sheet, from, to, sections: [{name, rows: [...]}]}
+ */
+function scheduleStructure(ss) {
+  const ids = scheduleIds(ss);
+  if (!ids.length) return null;
+  const today = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd');
+  let pick = null, fallback = null;
+  for (let k = ids.length - 1; k >= 0 && !pick; k--) {
+    const book = SpreadsheetApp.openById(ids[k]), sh = book.getSheetByName(SCHEDULE_TAB);
+    if (!sh) continue;
+    const tz = book.getSpreadsheetTimeZone(), all = sh.getDataRange().getValues();
+    const days = (all[1] || []).slice(2).map(function (v) { return dateKey(v, tz); }).filter(Boolean).sort();
+    const cand = { id: ids[k], sh: sh, all: all, from: days[0] || '', to: days[days.length - 1] || '' };
+    if (cand.from && cand.from <= today && today <= cand.to) pick = cand;
+    else if (!fallback) fallback = cand; // последняя таблица в списке
+  }
+  pick = pick || fallback;
+  if (!pick) return null;
+  const all = pick.all, n = all.length;
+  const checks = n > 0 ? pick.sh.getRange(1, 3, n, 1).getDataValidations().map(function (r) {
+    const dv = r[0]; return !!dv && dv.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.CHECKBOX;
+  }) : [];
+  const sections = [];
+  let cur = null;
+  for (let i = 2; i < n; i++) {
+    const a = String(all[i][0] == null ? '' : all[i][0]).trim(), b = String(all[i][1] == null ? '' : all[i][1]).trim();
+    if (a) cur = { name: a, rows: [], closed: false };
+    if (!cur || !b) continue;
+    const nb = normName(b);
+    if (/^всего/.test(nb)) { // итог раздела — «Всего ЛИЧНОЕ» закрывает «Личное»; «Всего за день» разделом не считается
+      if (!cur.closed && nb.indexOf(normName(cur.name)) >= 0) { cur.closed = true; if (cur.rows.length) sections.push({ name: cur.name, rows: cur.rows }); }
+      continue;
+    }
+    if (cur.closed) continue;
+    const isCheck = checks[i] || all[i].slice(2).some(function (v) { return v === true || v === false; });
+    if (!isCheck) cur.rows.push(b);
+  }
+  return { sheet: pick.id, from: pick.from, to: pick.to, sections: sections };
 }
 
 /**

@@ -99,7 +99,10 @@ afterRender.push(scheduleRings);
 // ---------- вид ----------
 VIEWS.timers = () => {
   const now = Date.now(), sp = spentDay(today(), now), list = timersList();
-  const durItems = items().filter(i => i.type === "duration");
+  // строки «время» — актуальные (скрытые не показываем, кроме уже выбранной), по разделам в порядке трекера
+  const secOrd = {}; sections().forEach((s, k) => secOrd[s.id] = k);
+  const durItems = items().filter(i => i.type === "duration" && !isHidden(i))
+    .sort((a, b) => (secOrd[a.sectionId] ?? 99) - (secOrd[b.sectionId] ?? 99) || byOrder(a, b));
   const groups = [...new Set(list.map(t => t.group || ""))];
   const groupNames = [...new Set(all("timers").map(t => t.group).filter(Boolean))];
   const card = t => {
@@ -117,7 +120,7 @@ VIEWS.timers = () => {
       ${editing ? `<div class="edit">
         <label>Название<input type="text" data-chg="timer" data-id="${t.id}" data-f="name" value="${esc(t.name)}" maxlength="60"></label>
         <label>Группа (необязательно)<input type="text" list="tgroups" data-chg="timer" data-id="${t.id}" data-f="group" value="${esc(t.group)}" placeholder="например, Личное"></label>
-        <label>Записывать время в строку трекера<select data-chg="timer" data-id="${t.id}" data-f="itemId">${opt("", "— не записывать —", !t.itemId)}${durItems.map(i => opt(i.id, (get("sections", i.sectionId)?.name || "") + " · " + i.name, t.itemId === i.id)).join("")}</select></label>
+        <label>Записывать время в строку трекера<select data-chg="timer" data-id="${t.id}" data-f="itemId">${opt("", "— не записывать —", !t.itemId)}${(t.itemId && !durItems.some(i => i.id === t.itemId) && get("items", t.itemId) ? [get("items", t.itemId)] : []).concat(durItems).map(i => opt(i.id, (get("sections", i.sectionId)?.name || "") + " · " + i.name, t.itemId === i.id)).join("")}</select></label>
         <label>Быстрые таймеры, минуты (для всех карточек)<input type="text" data-chg="cdPresets" value="${esc(cdPresets().join(", "))}" placeholder="5, 15, 45, 60, 90"></label>
         <div class="row"><span class="muted">Цвет</span>${PALETTE.map(c => `<button type="button" class="swatch" style="--c:${c};${c === t.color ? "outline:2px solid var(--fg);outline-offset:2px" : ""}" data-act="timerColor" data-id="${t.id}" data-c="${c}" aria-label="Цвет"></button>`).join("")}</div>
         <div class="row"><button type="button" class="btn btn-sm" data-act="moveTimer" data-id="${t.id}" data-n="-1">← Раньше</button><button type="button" class="btn btn-sm" data-act="moveTimer" data-id="${t.id}" data-n="1">Позже →</button>
